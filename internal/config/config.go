@@ -32,6 +32,9 @@ type Config struct {
 	// Port is the network port on which the API server will listen.
 	Port int `yaml:"port" json:"-"`
 
+	// Redis config controls the Redis connection for usage persistence.
+	Redis RedisConfig `yaml:"redis" json:"redis"`
+
 	// TLS config controls HTTPS server settings.
 	TLS TLSConfig `yaml:"tls" json:"tls"`
 
@@ -128,6 +131,14 @@ type ClaudeHeaderDefaults struct {
 	PackageVersion string `yaml:"package-version" json:"package-version"`
 	RuntimeVersion string `yaml:"runtime-version" json:"runtime-version"`
 	Timeout        string `yaml:"timeout" json:"timeout"`
+}
+
+// RedisConfig holds the configuration for connecting to a Redis instance for data persistence.
+type RedisConfig struct {
+	Enable   bool   `yaml:"enable" json:"enable"`
+	Addr     string `yaml:"addr" json:"addr"`
+	Password string `yaml:"password" json:"password"`
+	DB       int    `yaml:"db" json:"db"`
 }
 
 // TLSConfig holds HTTPS server settings.

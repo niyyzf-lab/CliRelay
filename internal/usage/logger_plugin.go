@@ -5,6 +5,7 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,10 +13,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
+	log "github.com/sirupsen/logrus"
 )
 
-var statisticsEnabled atomic.Bool
+var (
+	statisticsEnabled atomic.Bool
+	redisClient       *redis.Client
+	redisCtx          = context.Background()
+	redisCancel       context.CancelFunc
+	redisSyncWg       sync.WaitGroup
+)
+
+const redisUsageKey = "cliproxy:usage_stats_snapshot"
 
 func init() {
 	statisticsEnabled.Store(true)
@@ -55,6 +67,103 @@ func SetStatisticsEnabled(enabled bool) { statisticsEnabled.Store(enabled) }
 
 // StatisticsEnabled reports the current recording state.
 func StatisticsEnabled() bool { return statisticsEnabled.Load() }
+
+// InitRedis initializes the Redis client for usage persistence and starts the sync loop.
+func InitRedis(cfg config.RedisConfig) {
+	if !cfg.Enable || cfg.Addr == "" {
+		return
+	}
+
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     cfg.Addr,
+		Password: cfg.Password,
+		DB:       cfg.DB,
+	})
+
+	if err := redisClient.Ping(redisCtx).Err(); err != nil {
+		log.Errorf("failed to connect to Redis for usage persistence: %v", err)
+		redisClient.Close()
+		redisClient = nil
+		return
+	}
+
+	log.Infof("Redis persistence for usage statistics activated on %s (DB: %d)", cfg.Addr, cfg.DB)
+
+	// Attempt to load existing data
+	if err := loadFromRedis(); err != nil {
+		log.Errorf("failed to load usage statistics from Redis: %v", err)
+	} else {
+		log.Infof("Successfully loaded usage statistics from Redis")
+	}
+
+	redisCtx, redisCancel = context.WithCancel(context.Background())
+	redisSyncWg.Add(1)
+	go redisSyncLoop()
+}
+
+// StopRedis flushes the latest snapshot to Redis and closes the client.
+func StopRedis() {
+	if redisCancel != nil {
+		redisCancel()
+		redisSyncWg.Wait()
+	}
+	if redisClient != nil {
+		saveToRedis() // Perform a final save
+		redisClient.Close()
+		log.Infof("Redis usage persistence flushed and closed")
+	}
+}
+
+func redisSyncLoop() {
+	defer redisSyncWg.Done()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			saveToRedis()
+		case <-redisCtx.Done():
+			return
+		}
+	}
+}
+
+func saveToRedis() {
+	if redisClient == nil || defaultRequestStatistics == nil {
+		return
+	}
+	snapshot := defaultRequestStatistics.Snapshot()
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		log.Errorf("failed to marshal usage snapshot for Redis: %v", err)
+		return
+	}
+	// We don't set an expiration; it should persist indefinitely
+	if err := redisClient.Set(context.Background(), redisUsageKey, data, 0).Err(); err != nil {
+		log.Errorf("failed to save usage snapshot to Redis: %v", err)
+	}
+}
+
+func loadFromRedis() error {
+	if redisClient == nil || defaultRequestStatistics == nil {
+		return nil
+	}
+	data, err := redisClient.Get(context.Background(), redisUsageKey).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return nil // Key does not exist, which is fine for the first run
+		}
+		return err
+	}
+	var snapshot StatisticsSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return err
+	}
+	result := defaultRequestStatistics.MergeSnapshot(snapshot)
+	log.Infof("Loaded %d usage records from Redis (skipped %d duplicates)", result.Added, result.Skipped)
+	return nil
+}
 
 // RequestStatistics maintains aggregated request metrics in memory.
 type RequestStatistics struct {

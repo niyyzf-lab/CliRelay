@@ -5,6 +5,13 @@ host: ""
 # Server port
 port: 8317
 
+# Redis settings for usage statistics persistence
+redis:
+  enable: false
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
 # TLS settings for HTTPS. When enabled, the server listens with the provided certificate and key.
 tls:
   enable: false
