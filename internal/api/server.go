@@ -681,28 +681,86 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	filePath := managementasset.FilePath(s.configFilePath)
-	if strings.TrimSpace(filePath) == "" {
-		c.AbortWithStatus(http.StatusNotFound)
+
+	// Resolve the directory containing the SPA assets (manage.html + assets/).
+	panelDir := s.resolvePanelDir()
+	if panelDir == "" {
+		// Fallback to legacy single-file management.html behavior.
+		filePath := managementasset.FilePath(s.configFilePath)
+		if strings.TrimSpace(filePath) == "" {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		if _, err := os.Stat(filePath); err != nil {
+			if os.IsNotExist(err) {
+				if !managementasset.EnsureLatestManagementHTML(context.Background(), managementasset.StaticDir(s.configFilePath), cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository) {
+					c.AbortWithStatus(http.StatusNotFound)
+					return
+				}
+			} else {
+				log.WithError(err).Error("failed to stat management control panel asset")
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+		}
+		c.File(filePath)
 		return
 	}
 
-	if _, err := os.Stat(filePath); err != nil {
-		if os.IsNotExist(err) {
-			// Synchronously ensure management.html is available with a detached context.
-			// Control panel bootstrap should not be canceled by client disconnects.
-			if !managementasset.EnsureLatestManagementHTML(context.Background(), managementasset.StaticDir(s.configFilePath), cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository) {
-				c.AbortWithStatus(http.StatusNotFound)
+	// SPA mode: try to serve the requested static file from panelDir first.
+	// For example, /manage/assets/index-abc.js → panelDir/assets/index-abc.js
+	reqPath := strings.TrimSpace(c.Param("filepath"))
+	if reqPath != "" && reqPath != "/" {
+		// Clean the path to prevent directory traversal.
+		cleanPath := filepath.Clean(strings.TrimPrefix(reqPath, "/"))
+		if cleanPath != "." && !strings.Contains(cleanPath, "..") {
+			candidate := filepath.Join(panelDir, cleanPath)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				c.File(candidate)
 				return
 			}
-		} else {
-			log.WithError(err).Error("failed to stat management control panel asset")
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
 		}
 	}
 
-	c.File(filePath)
+	// SPA fallback: serve manage.html for all non-static-asset routes.
+	htmlFile := filepath.Join(panelDir, "manage.html")
+	if _, err := os.Stat(htmlFile); err != nil {
+		// Also try management.html for backwards compatibility.
+		htmlFile = filepath.Join(panelDir, "management.html")
+		if _, err = os.Stat(htmlFile); err != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+	}
+	c.File(htmlFile)
+}
+
+// resolvePanelDir returns the directory containing the SPA panel (manage.html + assets/).
+// It checks MANAGEMENT_PANEL_DIR env var first, then common well-known paths.
+func (s *Server) resolvePanelDir() string {
+	if override := strings.TrimSpace(os.Getenv("MANAGEMENT_PANEL_DIR")); override != "" {
+		if info, err := os.Stat(override); err == nil && info.IsDir() {
+			return override
+		}
+	}
+
+	// Check common deployment locations.
+	candidates := []string{
+		"/home/web/html/cliproxy-panel",
+	}
+
+	// Also try the static dir used by managementasset.
+	if staticDir := managementasset.StaticDir(s.configFilePath); staticDir != "" {
+		candidates = append(candidates, staticDir)
+	}
+
+	for _, dir := range candidates {
+		manageHTML := filepath.Join(dir, "manage.html")
+		if _, err := os.Stat(manageHTML); err == nil {
+			return dir
+		}
+	}
+	return ""
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {
