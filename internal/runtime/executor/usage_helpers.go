@@ -25,6 +25,10 @@ type usageReporter struct {
 	channelName string
 	requestedAt time.Time
 	once        sync.Once
+
+	// Content captured for log detail viewer
+	inputContent  string
+	outputContent string
 }
 
 func newUsageReporter(ctx context.Context, provider, model string, auth *cliproxyauth.Auth) *usageReporter {
@@ -45,6 +49,12 @@ func newUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 }
 
 func (r *usageReporter) publish(ctx context.Context, detail usage.Detail) {
+	r.publishWithOutcome(ctx, detail, false)
+}
+
+func (r *usageReporter) publishWithContent(ctx context.Context, detail usage.Detail, inputContent, outputContent string) {
+	r.inputContent = inputContent
+	r.outputContent = outputContent
 	r.publishWithOutcome(ctx, detail, false)
 }
 
@@ -80,17 +90,19 @@ func (r *usageReporter) publishWithOutcome(ctx context.Context, detail usage.Det
 			latencyMs = 0
 		}
 		usage.PublishRecord(ctx, usage.Record{
-			Provider:    r.provider,
-			Model:       r.model,
-			Source:      r.source,
-			ChannelName: r.channelName,
-			APIKey:      r.apiKey,
-			AuthID:      r.authID,
-			AuthIndex:   r.authIndex,
-			RequestedAt: r.requestedAt,
-			LatencyMs:   latencyMs,
-			Failed:      failed,
-			Detail:      detail,
+			Provider:      r.provider,
+			Model:         r.model,
+			Source:        r.source,
+			ChannelName:   r.channelName,
+			APIKey:        r.apiKey,
+			AuthID:        r.authID,
+			AuthIndex:     r.authIndex,
+			RequestedAt:   r.requestedAt,
+			LatencyMs:     latencyMs,
+			Failed:        failed,
+			Detail:        detail,
+			InputContent:  r.inputContent,
+			OutputContent: r.outputContent,
 		})
 	})
 }
