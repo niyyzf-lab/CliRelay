@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -66,6 +67,30 @@ const (
 	quotaBackoffBase      = time.Second
 	quotaBackoffMax       = 30 * time.Minute
 )
+
+// PermanentAuthError indicates an unrecoverable authentication failure.
+// When an executor's Refresh method returns this error, the conductor
+// will automatically remove the credential from memory and disk.
+type PermanentAuthError struct {
+	Reason string
+	Cause  error
+}
+
+func (e *PermanentAuthError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("permanent auth failure: %s: %v", e.Reason, e.Cause)
+	}
+	return fmt.Sprintf("permanent auth failure: %s", e.Reason)
+}
+
+func (e *PermanentAuthError) Unwrap() error { return e.Cause }
+
+// IsPermanentAuthError reports whether err (or any error in its chain)
+// is a PermanentAuthError.
+func IsPermanentAuthError(err error) bool {
+	var p *PermanentAuthError
+	return errors.As(err, &p)
+}
 
 var quotaCooldownDisabled atomic.Bool
 
@@ -169,12 +194,12 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		hook = NoopHook{}
 	}
 	manager := &Manager{
-		store:           store,
-		executors:       make(map[string]ProviderExecutor),
-		selector:        selector,
-		hook:            hook,
-		auths:           make(map[string]*Auth),
-		providerOffsets: make(map[string]int),
+		store:            store,
+		executors:        make(map[string]ProviderExecutor),
+		selector:         selector,
+		hook:             hook,
+		auths:            make(map[string]*Auth),
+		providerOffsets:  make(map[string]int),
 		refreshSemaphore: make(chan struct{}, refreshMaxConcurrency),
 	}
 	// atomic.Value requires non-nil initial value.
@@ -2153,6 +2178,20 @@ func (m *Manager) refreshAuth(ctx context.Context, id string) {
 	log.Debugf("refreshed %s, %s, %v", auth.Provider, auth.ID, err)
 	now := time.Now()
 	if err != nil {
+		// If the error is permanent (e.g. invalid_grant, refresh_token_reused),
+		// remove the credential from memory and disk.
+		if IsPermanentAuthError(err) {
+			log.Warnf("permanent refresh failure for %s (%s): %v — removing credential", auth.ID, auth.Provider, err)
+			m.mu.Lock()
+			delete(m.auths, id)
+			m.mu.Unlock()
+			if m.store != nil {
+				if delErr := m.store.Delete(ctx, id); delErr != nil {
+					log.Errorf("failed to delete invalid auth file %s: %v", id, delErr)
+				}
+			}
+			return
+		}
 		m.mu.Lock()
 		if current := m.auths[id]; current != nil {
 			current.NextRefreshAfter = now.Add(refreshFailureBackoff)

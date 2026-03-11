@@ -16,6 +16,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -278,7 +279,10 @@ func (o *CodexAuth) RefreshTokensWithRetry(ctx context.Context, refreshToken str
 		}
 		if isNonRetryableRefreshErr(err) {
 			log.Warnf("Token refresh attempt %d failed with non-retryable error: %v", attempt+1, err)
-			return nil, err
+			return nil, &cliproxyauth.PermanentAuthError{
+				Reason: "credential revoked or expired",
+				Cause:  err,
+			}
 		}
 
 		lastErr = err
@@ -293,7 +297,10 @@ func isNonRetryableRefreshErr(err error) bool {
 		return false
 	}
 	raw := strings.ToLower(err.Error())
-	return strings.Contains(raw, "refresh_token_reused")
+	return strings.Contains(raw, "refresh_token_reused") ||
+		strings.Contains(raw, "invalid_grant") ||
+		strings.Contains(raw, "token has been revoked") ||
+		strings.Contains(raw, "token has been expired")
 }
 
 // UpdateTokenStorage updates an existing CodexTokenStorage with new token data.
