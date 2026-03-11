@@ -61,6 +61,8 @@ type SystemStats struct {
 	// Concurrency
 	ActiveConcurrency []middleware.ConcurrencySnapshot `json:"active_concurrency"`
 	TotalInFlight     int64                            `json:"total_in_flight"`
+	TotalRPM          int                              `json:"total_rpm"`
+	TotalTPM          int64                            `json:"total_tpm"`
 }
 
 // network baseline for rate calculation
@@ -163,6 +165,16 @@ func (h *Handler) collectSystemStats() SystemStats {
 
 	// ── Concurrency snapshot ──
 	stats.ActiveConcurrency, stats.TotalInFlight = middleware.GetConcurrencySnapshot()
+
+	// Compute system-wide RPM and TPM totals
+	var sysRPM int
+	var sysTPM int64
+	for _, snap := range stats.ActiveConcurrency {
+		sysRPM += snap.RPM
+		sysTPM += snap.TPM
+	}
+	stats.TotalRPM = sysRPM
+	stats.TotalTPM = sysTPM
 
 	return stats
 }
