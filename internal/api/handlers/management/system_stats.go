@@ -16,6 +16,7 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 	psnet "github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
+	log "github.com/sirupsen/logrus"
 )
 
 // SystemStats is the JSON payload pushed via WebSocket and returned by HTTP.
@@ -23,7 +24,13 @@ type SystemStats struct {
 	// Database
 	DBSizeBytes int64 `json:"db_size_bytes"`
 
-	// Log directory
+	// Request log body storage inside SQLite.
+	LogContentStoreBytes int64 `json:"log_content_store_bytes"`
+
+	// Log directory size on disk.
+	LogDirSizeBytes int64 `json:"log_dir_size_bytes"`
+
+	// Deprecated alias retained for older panels that still read log_size_bytes.
 	LogSizeBytes int64 `json:"log_size_bytes"`
 
 	// Process-level resources
@@ -98,10 +105,16 @@ func (h *Handler) collectSystemStats() SystemStats {
 			}
 		}
 	}
+	if contentBytes, err := usage.GetRequestLogStorageBytes(); err == nil {
+		stats.LogContentStoreBytes = contentBytes
+	} else {
+		log.Warnf("system-stats: failed to query request log storage bytes: %v", err)
+	}
 
 	// ── Log directory size ──
 	if h.logDir != "" {
-		stats.LogSizeBytes = dirSize(h.logDir)
+		stats.LogDirSizeBytes = dirSize(h.logDir)
+		stats.LogSizeBytes = stats.LogDirSizeBytes
 	}
 
 	// ── Process CPU/Memory (gopsutil) ──

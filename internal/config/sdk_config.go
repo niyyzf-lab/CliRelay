@@ -42,10 +42,12 @@ type SDKConfig struct {
 // RequestLogStorageConfig controls retention and cleanup of full request/response bodies.
 type RequestLogStorageConfig struct {
 	// StoreContent toggles persistence of full request and response bodies.
+	// When false, new content is no longer written, but existing stored content is preserved.
 	StoreContent bool `yaml:"store-content" json:"store-content"`
 
 	// ContentRetentionDays defines how many days full request/response bodies are kept.
-	// Metadata rows remain available even after content is pruned.
+	// 0 or less means keep full content indefinitely. Metadata rows remain available
+	// even after content is pruned.
 	ContentRetentionDays int `yaml:"content-retention-days,omitempty" json:"content-retention-days,omitempty"`
 
 	// CleanupIntervalMinutes controls how often the background cleanup job runs.

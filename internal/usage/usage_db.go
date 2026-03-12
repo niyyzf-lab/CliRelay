@@ -728,6 +728,38 @@ func GetDBPath() string {
 	return usageDBPath
 }
 
+// GetRequestLogStorageBytes returns the approximate bytes currently occupied by
+// stored request/response bodies. It includes compressed rows in
+// request_log_content and any legacy inline content not yet migrated out of
+// request_logs.
+func GetRequestLogStorageBytes() (int64, error) {
+	db := getDB()
+	if db == nil {
+		return 0, nil
+	}
+
+	var totalBytes sql.NullInt64
+	err := db.QueryRow(`
+		SELECT
+			COALESCE((
+				SELECT SUM(CAST(length(input_content) AS INTEGER) + CAST(length(output_content) AS INTEGER))
+				FROM request_log_content
+			), 0) +
+			COALESCE((
+				SELECT SUM(CAST(length(input_content) AS INTEGER) + CAST(length(output_content) AS INTEGER))
+				FROM request_logs
+				WHERE length(input_content) > 0 OR length(output_content) > 0
+			), 0)
+	`).Scan(&totalBytes)
+	if err != nil {
+		return 0, fmt.Errorf("usage: query request log storage bytes: %w", err)
+	}
+	if !totalBytes.Valid {
+		return 0, nil
+	}
+	return totalBytes.Int64, nil
+}
+
 // ChannelLatency holds the average latency stats for a single channel (source).
 type ChannelLatency struct {
 	Source string  `json:"source"`

@@ -52,6 +52,10 @@ var (
 	}
 )
 
+func contentRetentionUnlimited() bool {
+	return requestLogStorage.ContentRetentionDays <= 0
+}
+
 func normalizeRequestLogStorageConfig(cfg config.RequestLogStorageConfig) requestLogStorageRuntime {
 	if !cfg.StoreContent && cfg.ContentRetentionDays == 0 && cfg.CleanupIntervalMinutes == 0 && !cfg.VacuumOnCleanup {
 		return requestLogStorageRuntime{
@@ -79,7 +83,7 @@ func normalizeRequestLogStorageConfig(cfg config.RequestLogStorageConfig) reques
 
 func startRequestLogMaintenance(db *sql.DB) {
 	stopRequestLogMaintenance()
-	if db == nil {
+	if db == nil || !requestLogStorage.StoreContent {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -199,7 +203,7 @@ func decompressLogContent(compression string, content []byte) (string, error) {
 }
 
 func migrateLegacyContentBatch(db *sql.DB, batchSize int) (int, error) {
-	if db == nil {
+	if db == nil || !requestLogStorage.StoreContent {
 		return 0, nil
 	}
 	if batchSize <= 0 {
@@ -277,15 +281,15 @@ func migrateLegacyContentBatch(db *sql.DB, batchSize int) (int, error) {
 }
 
 func withinContentRetention(timestamp time.Time) bool {
-	if requestLogStorage.ContentRetentionDays <= 0 {
-		return false
+	if contentRetentionUnlimited() {
+		return true
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -requestLogStorage.ContentRetentionDays)
 	return !timestamp.Before(cutoff)
 }
 
 func cleanupExpiredLogContent(db *sql.DB) (int64, error) {
-	if db == nil || requestLogStorage.ContentRetentionDays <= 0 {
+	if db == nil || !requestLogStorage.StoreContent || contentRetentionUnlimited() {
 		return 0, nil
 	}
 

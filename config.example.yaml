@@ -72,9 +72,11 @@ usage-statistics-enabled: false
 # Detailed request/response body retention settings for usage.db.
 request-log-storage:
   # When true, persist full request and response bodies in SQLite.
+  # When false, stop writing new content while preserving existing stored content.
   store-content: true
 
   # Keep full request/response bodies for the last N days.
+  # Set to 0 to retain full content indefinitely.
   # The lightweight request metadata rows are retained separately.
   content-retention-days: 30
 

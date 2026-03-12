@@ -320,8 +320,6 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	hourKey := timestamp.Hour()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.totalRequests++
 	if success {
 		s.successCount++
@@ -349,9 +347,11 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	s.requestsByHour[hourKey]++
 	s.tokensByDay[dayKey] += totalTokens
 	s.tokensByHour[hourKey] += totalTokens
+	s.mu.Unlock()
 
-	// Write to SQLite (non-blocking, outside lock)
-	go InsertLog(statsKey, modelName, record.Source, record.ChannelName,
+	// Persist request logs in the usage manager worker so SQLite writes stay
+	// serialized and do not spawn one goroutine per request.
+	InsertLog(statsKey, modelName, record.Source, record.ChannelName,
 		record.AuthIndex, failed, timestamp, record.LatencyMs, detail,
 		record.InputContent, record.OutputContent)
 }

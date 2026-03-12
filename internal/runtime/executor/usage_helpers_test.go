@@ -1,6 +1,11 @@
 package executor
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"os"
+	"testing"
+)
 
 func TestParseOpenAIUsageChatCompletions(t *testing.T) {
 	data := []byte(`{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":5}}}`)
@@ -39,5 +44,31 @@ func TestParseOpenAIUsageResponses(t *testing.T) {
 	}
 	if detail.ReasoningTokens != 9 {
 		t.Fatalf("reasoning tokens = %d, want %d", detail.ReasoningTokens, 9)
+	}
+}
+
+func TestUsageReporterSpillsLargeStreamingOutputToTempFile(t *testing.T) {
+	reporter := newUsageReporter(context.Background(), "provider", "model", nil)
+	chunk := bytes.Repeat([]byte("x"), usageReporterOutputMemoryLimit/2)
+
+	reporter.appendOutputChunk(chunk)
+	reporter.appendOutputChunk(chunk)
+
+	if reporter.outputPath == "" {
+		t.Fatalf("expected outputPath to be set after spilling to temp file")
+	}
+	tempPath := reporter.outputPath
+
+	_, output := reporter.finalizeContent()
+	expected := string(chunk) + "\n" + string(chunk) + "\n"
+	if output != expected {
+		t.Fatalf("unexpected output length/content: got=%d want=%d", len(output), len(expected))
+	}
+
+	if reporter.outputPath != "" {
+		t.Fatalf("expected outputPath to be cleared after finalizeContent")
+	}
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		t.Fatalf("expected temp file to be removed, stat err=%v", err)
 	}
 }
