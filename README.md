@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/github/stars/kittors/CliRelay?style=for-the-badge&color=f59e0b" alt="Stars">
   <img src="https://img.shields.io/github/forks/kittors/CliRelay?style=for-the-badge&color=8b5cf6" alt="Forks">
@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://help.router-for.me/">📖 Docs</a> ·
-  <a href="https://github.com/kittors/codeProxy">🖥️ Management Panel</a> ·
+  <a href="https://github.com/router-for-me/Cli-Proxy-API-Management-Center">🖥️ Management Panel</a> ·
   <a href="https://github.com/kittors/CliRelay/issues">🐛 Report Bug</a> ·
   <a href="https://github.com/kittors/CliRelay/pulls">✨ Request Feature</a>
 </p>
@@ -26,9 +26,9 @@
 
 ## ⚡ What is CliRelay?
 
-> **✨ Heavily enhanced fork of the [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) project** — rebuilt with a production-grade management layer, enterprise-quality monitoring, and a full React-based admin dashboard.
+> **✨ Heavily enhanced fork of the [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) project** — rebuilt with a production-grade management layer, web control panel hosting, and a terminal TUI for day-2 operations.
 
-CliRelay lets you **proxy requests** from AI coding tools (Claude Code, Gemini CLI, OpenAI Codex, Amp CLI, Kiro, etc.) through a single unified endpoint. Authenticate once with OAuth, add your API keys — or both — and CliRelay handles intelligent routing, load balancing, failover, and usage logging automatically.
+CliRelay lets you **proxy requests** from AI coding tools and compatible API clients (Claude Code, Gemini CLI, OpenAI Codex, Amp CLI, OpenAI-compatible clients, etc.) through a single unified endpoint. Authenticate with OAuth, API keys, cookies, or a mix of them, and CliRelay handles routing, failover, usage logging, `/manage` web hosting, and terminal management workflows automatically.
 
 ```
 ┌───────────────────────┐         ┌──────────────┐         ┌────────────────────┐
@@ -37,9 +37,11 @@ CliRelay lets you **proxy requests** from AI coding tools (Claude Code, Gemini C
 │  Claude Code          │ ──────▶ │   CliRelay   │ ──────▶ │  OpenAI / Codex    │
 │  Gemini CLI           │         │   :8317      │ ──────▶ │  Anthropic Claude  │
 │  OpenAI Codex         │         │              │ ──────▶ │  Qwen / iFlow      │
-│  Amp CLI / IDE        │         │              │ ──────▶ │  Kiro / Vertex     │
-│  Kiro / Any OAI-compat│         └──────────────┘         └────────────────────┘
-└───────────────────────┘
+│  Amp CLI / IDE        │         │              │ ──────▶ │  Antigravity       │
+│  Any OAI-compatible   │         └──────────────┘         │  Vertex / OpenAI   │
+└───────────────────────┘                                  │  iFlow / Qwen /    │
+                                                           │  Kimi / Claude     │
+                                                           └────────────────────┘
 ```
 
 ## ✨ Key Features
@@ -48,7 +50,7 @@ CliRelay lets you **proxy requests** from AI coding tools (Claude Code, Gemini C
 
 | Feature | Description |
 |:--------|:------------|
-| 🌐 **Unified Endpoint** | One `http://localhost:8317` handles requests for all providers (Gemini, Claude, OpenAI, Codex, Qwen, iFlow, Vertex, Kiro, MiniMax, Grok, and more) |
+| 🌐 **Unified Endpoint** | One `http://localhost:8317` fronts Gemini, Claude, Codex, Qwen, iFlow, Antigravity, Vertex-compatible endpoints, OpenAI-compatible upstreams, and Amp integration |
 | ⚖️ **Smart Load Balancing** | Round-robin or fill-first scheduling across multiple API keys for the same provider |
 | 🔄 **Auto Failover** | Automatically switches to backup channels when quotas are exhausted or errors occur |
 | 🧠 **Multimodal Support** | Full support for text + image inputs, function calling (tools), and streaming SSE responses |
@@ -91,7 +93,7 @@ CliRelay lets you **proxy requests** from AI coding tools (Claude Code, Gemini C
 
 | Feature | Description |
 |:--------|:------------|
-| 🔐 **OAuth Support** | Native OAuth flows for Gemini, Claude, Codex, Qwen, iFlow (service-account or browser-based) |
+| 🔐 **OAuth Support** | Native OAuth flows for Gemini, Claude, Codex, Qwen, iFlow, Antigravity, and Kimi, plus device/browser/cookie variants where supported |
 | 🔒 **TLS Handling** | Configurable TLS settings for upstream communication |
 | 🏠 **Panel Isolation** | Management panel access controlled independently with admin password |
 | 🛡️ **Request Cloaking** | Upstream requests are stripped of client-identifying headers for privacy |
@@ -102,11 +104,12 @@ CliRelay lets you **proxy requests** from AI coding tools (Claude Code, Gemini C
 |:--------|:------------|
 | 💾 **SQLite Storage** | All usage data, request logs, and message bodies stored in local SQLite database |
 | 🔄 **Redis Backup** | Optional Redis integration for periodic snapshotting and cross-restart metric preservation |
+| 🗃️ **Pluggable Auth/Config Backends** | Local files by default, with optional PostgreSQL, Git, or S3-compatible object storage backends for config/auth persistence |
 | 📦 **Config Snapshots** | Import/export entire system configuration as JSON for backup and migration |
 
 ## 📸 Management Panel Preview
 
-The **[codeProxy](https://github.com/kittors/codeProxy)** dashboard provides a stunning, modern web UI for managing your CliRelay instance:
+CliRelay can expose a built-in web control panel at `/manage`. The server can host bundled SPA assets or fall back to an auto-synced `management.html` asset from the configured panel repository.
 
 <p align="center">
   <img src="docs/images/dashboard.png" width="100%" />
@@ -124,30 +127,22 @@ The **[codeProxy](https://github.com/kittors/codeProxy)** dashboard provides a s
 </p>
 <p align="center"><em>Request Logs — Virtual scrolling, multi-filter, token hover, error detail modal</em></p>
 
-> 🔗 See the full [codeProxy README](https://github.com/kittors/codeProxy) for more screenshots and feature details.
+> 🔗 The runtime panel source is configurable via `remote-management.panel-github-repository`. The default repository is [router-for-me/Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center).
 
 ## 🏗️ Supported Providers
 
-<table>
-<tr>
-<td align="center"><strong>🟢 Google Gemini</strong><br/>OAuth + API Key</td>
-<td align="center"><strong>🟣 Anthropic Claude</strong><br/>OAuth + API Key</td>
-<td align="center"><strong>⚫ OpenAI Codex</strong><br/>OAuth</td>
-</tr>
-<tr>
-<td align="center"><strong>🔵 Qwen Code</strong><br/>OAuth</td>
-<td align="center"><strong>🟡 iFlow (GLM)</strong><br/>OAuth</td>
-<td align="center"><strong>🟠 Vertex AI</strong><br/>API Key</td>
-</tr>
-<tr>
-<td align="center"><strong>🔴 Kimi</strong><br/>API Key</td>
-<td align="center"><strong>🟤 Kiro</strong><br/>API Key</td>
-<td align="center"><strong>🟣 MiniMax</strong><br/>API Key</td>
-</tr>
-<tr>
-<td align="center" colspan="3"><strong>🔗 Any OpenAI-compatible upstream</strong> (OpenRouter, Grok, etc.)</td>
-</tr>
-</table>
+| Provider / Channel | Auth | Notes |
+|:-------------------|:-----|:------|
+| Google Gemini | OAuth + API Key | Gemini CLI / AI Studio style flows |
+| Anthropic Claude | OAuth + API Key | Claude Code and Claude-compatible clients |
+| OpenAI Codex | OAuth + API Key | Includes Responses and WebSocket bridging |
+| Qwen | OAuth | Qwen Code style login flow |
+| iFlow / GLM | OAuth + Cookie | Supports iFlow routing and related model families |
+| Kimi | OAuth | Browser-based login flow |
+| Antigravity | OAuth | Dedicated OAuth channel with model backfill support |
+| Vertex-compatible endpoints | API Key | Custom base URL, headers, aliases, exclusions |
+| OpenAI-compatible upstreams | API Key | OpenRouter, Grok-compatible endpoints, and custom providers |
+| Amp integration | Upstream API key + mappings | Direct Amp upstream fallback or mapped local routing |
 
 ## 🚀 Quick Start
 
@@ -157,6 +152,9 @@ The **[codeProxy](https://github.com/kittors/codeProxy)** dashboard provides a s
 # Download the latest release for your platform from GitHub Releases
 # Then copy the example config
 cp config.example.yaml config.yaml
+
+# Optional: build locally from source
+go build -o cli-proxy-api ./cmd/server
 ```
 
 Edit `config.yaml` to add your API keys or OAuth credentials.
@@ -164,8 +162,34 @@ Edit `config.yaml` to add your API keys or OAuth credentials.
 ### 2️⃣ Run
 
 ```bash
-./clirelay
-# Server starts at http://localhost:8317
+./cli-proxy-api -config ./config.yaml
+# Server: http://localhost:8317
+# Web panel (if enabled): http://localhost:8317/manage
+```
+
+The release artifact is currently named `cli-proxy-api`. The `clirelay` command shown later is a helper wrapper installed by `install.sh`, not the raw server binary name.
+
+### Useful CLI Modes
+
+```bash
+# OAuth / credential flows
+./cli-proxy-api -login
+./cli-proxy-api -codex-login
+./cli-proxy-api -codex-device-login
+./cli-proxy-api -claude-login
+./cli-proxy-api -qwen-login
+./cli-proxy-api -iflow-login
+./cli-proxy-api -iflow-cookie
+./cli-proxy-api -antigravity-login
+./cli-proxy-api -kimi-login
+
+# Admin interfaces
+./cli-proxy-api -tui
+./cli-proxy-api -tui -standalone
+
+# Other utilities
+./cli-proxy-api -vertex-import ./service-account.json
+./cli-proxy-api -oauth-callback-port 18080 -no-browser
 ```
 
 ### 🐳 Docker (Recommended)
@@ -216,7 +240,7 @@ Or deploy manually with Docker Compose:
 docker compose up -d
 ```
 
-For manual Docker deployments, you can also set `CLIRELAY_LOCALE=en` or `CLIRELAY_LOCALE=zh` in your Compose environment to control the default TUI language.
+The included `docker-compose.yml` uses the published image by default. For manual Docker deployments, you can also set `CLIRELAY_LOCALE=en` or `CLIRELAY_LOCALE=zh` in your Compose environment to control the default TUI language.
 
 ### 🗄️ Enabling Data Persistence
 
@@ -226,6 +250,8 @@ By default, API usage logs are stored in SQLite for persistence. For additional 
 CliRelay will automatically snapshot and restore traffic metrics on every startup!
 
 For large installations, tune `request-log-storage` in `config.yaml` to control how long full request/response bodies are retained. By default, full content is compressed and kept for 30 days while lightweight request metadata remains queryable for longer-term statistics.
+
+If you need non-local config/auth persistence, the server also supports PostgreSQL, Git-backed, and S3-compatible object-store backends through environment-based bootstrap settings.
 
 ### 3️⃣ Point Your Tools
 
@@ -243,33 +269,35 @@ requires_openai_auth = true
 
 ## 🖥️ Management Panel
 
-Install and run the **[codeProxy](https://github.com/kittors/codeProxy)** frontend:
+When the control panel is enabled, open:
 
 ```bash
-git clone https://github.com/kittors/codeProxy.git
-cd codeProxy
-bun install
-bun run dev
-# Visit http://localhost:5173
+http://localhost:8317/manage
 ```
+
+- Official Docker installs and the published image expose the panel at `/manage`.
+- The server can serve a bundled SPA directory or auto-fetch a legacy `management.html` asset when needed.
+- This repository contains the hosting/update path for `/manage`; the standalone web panel source is maintained separately from the Go server code.
+- Terminal-first management is also available through `clirelay tui` or `./cli-proxy-api -tui`.
+- If you want to customize the panel asset source, set `remote-management.panel-github-repository`.
 
 ## 📐 Architecture
 
-```
+```text
 CliRelay/
-├── cmd/              # Entry point
-├── internal/         # Core proxy logic, translators, handlers
-│   ├── handler/      # HTTP request handlers (chat, models, management)
-│   ├── translator/   # Provider-specific request/response translators
-│   ├── scheduler/    # Load balancing & channel selection
-│   ├── database/     # SQLite operations & migration
-│   └── monitor/      # Health check & system stats
-├── sdk/              # Reusable Go SDK
-├── auths/            # OAuth authentication flows
-├── examples/         # Custom provider examples
-├── docs/             # SDK & API documentation
-├── config.yaml       # Runtime configuration
-└── docker-compose.yml
+├── cmd/server/               # Binary entry point and CLI mode dispatch
+├── internal/api/             # HTTP server, management routes, middleware
+├── internal/auth/            # Provider OAuth / cookie / browser auth flows
+├── internal/config/          # Config parsing, defaults, migrations
+├── internal/store/           # Local, Git, PostgreSQL, object-store auth/config persistence
+├── internal/tui/             # Terminal management UI
+├── internal/usage/           # SQLite usage DB, retention, analytics
+├── internal/managementasset/ # /manage panel hosting and asset sync
+├── sdk/                      # Reusable Go SDK, handlers, executors
+├── auths/                    # Local credential storage
+├── examples/                 # SDK / custom provider examples
+├── docs/                     # Local docs and panel screenshots
+└── docker-compose.yml        # Container deployment entry
 ```
 
 ## 📚 Documentation

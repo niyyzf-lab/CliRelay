@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/github/stars/kittors/CliRelay?style=for-the-badge&color=f59e0b" alt="Stars">
   <img src="https://img.shields.io/github/forks/kittors/CliRelay?style=for-the-badge&color=8b5cf6" alt="Forks">
@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://help.router-for.me/cn/">📖 文档</a> ·
-  <a href="https://github.com/kittors/codeProxy">🖥️ 管理面板</a> ·
+  <a href="https://github.com/router-for-me/Cli-Proxy-API-Management-Center">🖥️ 管理面板</a> ·
   <a href="https://github.com/kittors/CliRelay/issues">🐛 报告问题</a> ·
   <a href="https://github.com/kittors/CliRelay/pulls">✨ 功能请求</a>
 </p>
@@ -26,9 +26,9 @@
 
 ## ⚡ CliRelay 是什么？
 
-> **✨ 基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的深度增强版** — 重建了生产级管理层、企业级监控体系，并搭配全新 React 管理面板。
+> **✨ 基于 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的深度增强版** — 补强了生产级管理层、Web 控制面板托管能力，以及面向日常运维的终端 TUI。
 
-CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Codex、Amp CLI、Kiro 等）的请求**统一代理**到一个端点。通过 OAuth 登录或添加 API 密钥即可使用，CliRelay 自动处理智能路由、负载均衡、故障转移和用量日志记录。
+CliRelay 让你可以把 AI 编程工具和兼容 API 客户端（Claude Code、Gemini CLI、OpenAI Codex、Amp CLI、任意 OpenAI 兼容客户端等）的请求**统一代理**到一个端点。你可以混合使用 OAuth、API Key、Cookie 等凭据，CliRelay 会自动处理路由、故障转移、用量日志、`/manage` Web 面板托管和终端管理流程。
 
 ```
 ┌───────────────────────┐         ┌──────────────┐         ┌────────────────────┐
@@ -37,9 +37,11 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 │  Claude Code          │ ──────▶ │   CliRelay   │ ──────▶ │  OpenAI / Codex    │
 │  Gemini CLI           │         │   :8317      │ ──────▶ │  Anthropic Claude  │
 │  OpenAI Codex         │         │              │ ──────▶ │  Qwen / iFlow      │
-│  Amp CLI / IDE        │         │              │ ──────▶ │  Kiro / Vertex     │
-│  Kiro / 其他兼容工具   │         └──────────────┘         └────────────────────┘
-└───────────────────────┘
+│  Amp CLI / IDE        │         │              │ ──────▶ │  Antigravity       │
+│  任意 OAI 兼容客户端   │         └──────────────┘         │  Vertex / OpenAI   │
+└───────────────────────┘                                  │  iFlow / Qwen /    │
+                                                           │  Kimi / Claude     │
+                                                           └────────────────────┘
 ```
 
 ## ✨ 核心特性
@@ -48,7 +50,7 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 
 | 特性 | 说明 |
 |:-----|:-----|
-| 🌐 **统一端点** | 一个 `http://localhost:8317` 处理所有服务商请求（Gemini、Claude、OpenAI、Codex、Qwen、iFlow、Vertex、Kiro、MiniMax、Grok 等） |
+| 🌐 **统一端点** | 一个 `http://localhost:8317` 统一承接 Gemini、Claude、Codex、Qwen、iFlow、Antigravity、Vertex 兼容端点、OpenAI 兼容上游以及 Amp 集成 |
 | ⚖️ **智能负载均衡** | 跨多个 API Key 的轮询或填充优先调度策略 |
 | 🔄 **自动故障转移** | 配额耗尽或发生错误时自动切换到备用渠道 |
 | 🧠 **多模态支持** | 完整支持文本 + 图片输入、Function Calling（工具调用）和 SSE 流式响应 |
@@ -91,7 +93,7 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 
 | 特性 | 说明 |
 |:-----|:-----|
-| 🔐 **OAuth 支持** | 原生 OAuth 流程，支持 Gemini、Claude、Codex、Qwen、iFlow（服务账户或浏览器方式） |
+| 🔐 **OAuth 支持** | 原生 OAuth 流程覆盖 Gemini、Claude、Codex、Qwen、iFlow、Antigravity、Kimi，并在支持的渠道中提供设备码 / 浏览器 / Cookie 变体 |
 | 🔒 **TLS 处理** | 可配置的上游通信 TLS 设置 |
 | 🏠 **面板隔离** | 管理面板访问由管理员密码独立控制 |
 | 🛡️ **请求伪装** | 上游请求自动剥离客户端标识 Headers，保护隐私 |
@@ -102,11 +104,12 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 |:-----|:-----|
 | 💾 **SQLite 存储** | 所有使用数据、请求日志和消息体存储在本地 SQLite 数据库 |
 | 🔄 **Redis 备份** | 可选 Redis 集成，定期快照和跨重启指标保留 |
+| 🗃️ **可插拔认证/配置后端** | 默认使用本地文件，也支持通过 PostgreSQL、Git 或 S3 兼容对象存储持久化配置和认证信息 |
 | 📦 **配置快照** | 导入/导出整个系统配置为 JSON，便于备份和迁移 |
 
 ## 📸 管理面板预览
 
-**[codeProxy](https://github.com/kittors/codeProxy)** 仪表盘为你的 CliRelay 实例提供精美的现代化 Web UI：
+CliRelay 可以在 `/manage` 暴露内置 Web 控制面板。服务端既可以托管打包后的 SPA 资源，也可以回退到自动同步的 `management.html` 单文件面板。
 
 <p align="center">
   <img src="docs/images/dashboard.png" width="100%" />
@@ -124,30 +127,22 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 </p>
 <p align="center"><em>请求日志 — 虚拟滚动、多条件过滤、Token 悬浮、错误详情弹窗</em></p>
 
-> 🔗 更多截图和功能详情请查看 [codeProxy README](https://github.com/kittors/codeProxy)
+> 🔗 面板资源仓库可通过 `remote-management.panel-github-repository` 配置，默认仓库为 [router-for-me/Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center)。
 
 ## 🏗️ 支持的服务商
 
-<table>
-<tr>
-<td align="center"><strong>🟢 Google Gemini</strong><br/>OAuth + API Key</td>
-<td align="center"><strong>🟣 Anthropic Claude</strong><br/>OAuth + API Key</td>
-<td align="center"><strong>⚫ OpenAI Codex</strong><br/>OAuth</td>
-</tr>
-<tr>
-<td align="center"><strong>🔵 通义千问 Qwen</strong><br/>OAuth</td>
-<td align="center"><strong>🟡 iFlow (GLM)</strong><br/>OAuth</td>
-<td align="center"><strong>🟠 Vertex AI</strong><br/>API Key</td>
-</tr>
-<tr>
-<td align="center"><strong>🔴 Kimi</strong><br/>API Key</td>
-<td align="center"><strong>🟤 Kiro</strong><br/>API Key</td>
-<td align="center"><strong>🟣 MiniMax</strong><br/>API Key</td>
-</tr>
-<tr>
-<td align="center" colspan="3"><strong>🔗 任意 OpenAI 兼容上游</strong>（OpenRouter、Grok 等）</td>
-</tr>
-</table>
+| 服务商 / 通道 | 认证方式 | 说明 |
+|:--------------|:---------|:-----|
+| Google Gemini | OAuth + API Key | 适配 Gemini CLI / AI Studio 风格链路 |
+| Anthropic Claude | OAuth + API Key | 面向 Claude Code 与 Claude 兼容客户端 |
+| OpenAI Codex | OAuth + API Key | 包含 Responses 与 WebSocket 桥接能力 |
+| Qwen | OAuth | 通义千问 Qwen Code 风格登录流程 |
+| iFlow / GLM | OAuth + Cookie | 支持 iFlow 路由及相关模型族 |
+| Kimi | OAuth | 浏览器登录流程 |
+| Antigravity | OAuth | 独立 OAuth 通道，支持模型回填 |
+| Vertex 兼容端点 | API Key | 支持自定义 base URL、Header、别名与排除规则 |
+| OpenAI 兼容上游 | API Key | OpenRouter、Grok 兼容端点及自定义 provider |
+| Amp 集成 | 上游 API Key + 映射 | 可直接回退到 Amp 上游，也可映射到本地可用模型 |
 
 ## 🚀 快速开始
 
@@ -157,6 +152,9 @@ CliRelay 让你可以将 AI 编程工具（Claude Code、Gemini CLI、OpenAI Cod
 # 从 GitHub Releases 下载适合你平台的最新版本
 # 然后复制示例配置文件
 cp config.example.yaml config.yaml
+
+# 可选：从源码本地构建
+go build -o cli-proxy-api ./cmd/server
 ```
 
 编辑 `config.yaml` 添加你的 API 密钥或 OAuth 凭据。
@@ -164,8 +162,34 @@ cp config.example.yaml config.yaml
 ### 2️⃣ 运行
 
 ```bash
-./clirelay
-# 服务启动在 http://localhost:8317
+./cli-proxy-api -config ./config.yaml
+# 服务地址: http://localhost:8317
+# Web 面板（启用时）: http://localhost:8317/manage
+```
+
+当前 release 产物名仍是 `cli-proxy-api`。后文出现的 `clirelay` 命令是 `install.sh` 安装的 helper 包装命令，不是底层服务二进制的原始名称。
+
+### 常用 CLI 模式
+
+```bash
+# OAuth / 凭据流程
+./cli-proxy-api -login
+./cli-proxy-api -codex-login
+./cli-proxy-api -codex-device-login
+./cli-proxy-api -claude-login
+./cli-proxy-api -qwen-login
+./cli-proxy-api -iflow-login
+./cli-proxy-api -iflow-cookie
+./cli-proxy-api -antigravity-login
+./cli-proxy-api -kimi-login
+
+# 管理界面
+./cli-proxy-api -tui
+./cli-proxy-api -tui -standalone
+
+# 其他工具模式
+./cli-proxy-api -vertex-import ./service-account.json
+./cli-proxy-api -oauth-callback-port 18080 -no-browser
 ```
 
 ### 🐳 Docker 部署（推荐）
@@ -216,7 +240,7 @@ clirelay tui
 docker compose up -d
 ```
 
-如果你是手动使用 Docker Compose 部署，也可以在环境变量中设置 `CLIRELAY_LOCALE=en` 或 `CLIRELAY_LOCALE=zh`，控制 TUI 的默认语言。
+仓库内的 `docker-compose.yml` 默认直接使用已发布镜像。如果你是手动使用 Docker Compose 部署，也可以在环境变量中设置 `CLIRELAY_LOCALE=en` 或 `CLIRELAY_LOCALE=zh`，控制 TUI 的默认语言。
 
 ### 🗄️ 开启数据持久化
 
@@ -226,6 +250,8 @@ docker compose up -d
 配置完成后，CliRelay 每次启动都会自动完成快照恢复！
 
 如果你的请求量较大，可以在 `config.yaml` 中调整 `request-log-storage`。默认情况下，全文请求/响应正文会以压缩形式保留 30 天，而轻量级请求元数据可继续用于长期统计与筛选。
+
+如果你需要非本地磁盘的配置/认证持久化，服务端还支持通过环境变量启用 PostgreSQL、Git 和 S3 兼容对象存储后端。
 
 ### 3️⃣ 配置工具
 
@@ -243,33 +269,35 @@ requires_openai_auth = true
 
 ## 🖥️ 管理面板
 
-安装并运行 **[codeProxy](https://github.com/kittors/codeProxy)** 前端：
+启用控制面板后，直接访问：
 
 ```bash
-git clone https://github.com/kittors/codeProxy.git
-cd codeProxy
-bun install
-bun run dev
-# 访问 http://localhost:5173
+http://localhost:8317/manage
 ```
+
+- 官方 Docker 安装和已发布镜像都会在 `/manage` 暴露控制面板。
+- 服务端既支持托管打包后的 SPA 目录，也支持在需要时自动拉取兼容的 `management.html` 单文件面板。
+- 当前仓库只包含 `/manage` 的托管和同步链路，独立 Web 面板源码与 Go 服务端代码分仓维护。
+- 如果你偏向终端运维，也可以使用 `clirelay tui` 或 `./cli-proxy-api -tui`。
+- 如果你希望自定义面板资源来源，可设置 `remote-management.panel-github-repository`。
 
 ## 📐 项目结构
 
-```
+```text
 CliRelay/
-├── cmd/              # 入口
-├── internal/         # 核心代理逻辑、翻译器、处理器
-│   ├── handler/      # HTTP 请求处理器（聊天、模型、管理）
-│   ├── translator/   # 服务商特定的请求/响应翻译器
-│   ├── scheduler/    # 负载均衡与渠道选择
-│   ├── database/     # SQLite 操作与迁移
-│   └── monitor/      # 健康检查与系统状态
-├── sdk/              # 可复用的 Go SDK
-├── auths/            # OAuth 身份验证流程
-├── examples/         # 自定义 Provider 示例
-├── docs/             # SDK 与 API 文档
-├── config.yaml       # 运行时配置
-└── docker-compose.yml
+├── cmd/server/               # 二进制入口和 CLI 模式分发
+├── internal/api/             # HTTP 服务、管理路由、中间件
+├── internal/auth/            # Provider 的 OAuth / Cookie / 浏览器认证流程
+├── internal/config/          # 配置解析、默认值、迁移
+├── internal/store/           # 本地、Git、PostgreSQL、对象存储配置/认证持久化
+├── internal/tui/             # 终端管理 UI
+├── internal/usage/           # SQLite 用量数据库、保留策略、分析聚合
+├── internal/managementasset/ # /manage 面板托管与资源同步
+├── sdk/                      # 可复用 Go SDK、handlers、executors
+├── auths/                    # 本地凭据存储
+├── examples/                 # SDK / 自定义 provider 示例
+├── docs/                     # 本地文档与面板截图
+└── docker-compose.yml        # 容器部署入口
 ```
 
 ## 📚 文档
