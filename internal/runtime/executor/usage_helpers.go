@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -11,9 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
+	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+const usageReporterOutputMemoryLimit = 256 * 1024
 
 type usageReporter struct {
 	provider    string
@@ -25,10 +29,14 @@ type usageReporter struct {
 	channelName string
 	requestedAt time.Time
 	once        sync.Once
+	contentMu   sync.Mutex
 
 	// Content captured for log detail viewer
 	inputContent  string
 	outputContent string
+	outputBuilder strings.Builder
+	outputFile    *os.File
+	outputPath    string
 }
 
 func newUsageReporter(ctx context.Context, provider, model string, auth *cliproxyauth.Auth) *usageReporter {
@@ -58,21 +66,46 @@ func (r *usageReporter) publishWithContent(ctx context.Context, detail usage.Det
 	r.publishWithOutcome(ctx, detail, false)
 }
 
-const maxReporterContentBytes = 100 * 1024 // 100 KB soft limit for accumulated streaming output
-
 // setInputContent stores the request payload for inclusion in usage records.
 // Call before starting the streaming goroutine.
 func (r *usageReporter) setInputContent(content string) {
+	if r == nil {
+		return
+	}
+	r.contentMu.Lock()
+	defer r.contentMu.Unlock()
 	r.inputContent = content
 }
 
 // appendOutputChunk accumulates a streaming response line for inclusion in usage records.
-// Silently stops accumulating once the soft limit is reached.
 func (r *usageReporter) appendOutputChunk(chunk []byte) {
-	if len(r.outputContent)+len(chunk)+1 > maxReporterContentBytes {
+	if r == nil || len(chunk) == 0 {
 		return
 	}
-	r.outputContent += string(chunk) + "\n"
+	r.contentMu.Lock()
+	defer r.contentMu.Unlock()
+
+	if r.outputFile == nil && r.outputBuilder.Len()+len(chunk)+1 > usageReporterOutputMemoryLimit {
+		if err := r.spillOutputBuilderToFileLocked(); err != nil {
+			log.Errorf("usage: spill streaming output to temp file: %v", err)
+		}
+	}
+
+	if r.outputFile != nil {
+		if _, err := r.outputFile.Write(chunk); err != nil {
+			log.Errorf("usage: write streaming output chunk to temp file: %v", err)
+			r.outputBuilder.Write(chunk)
+			r.outputBuilder.WriteByte('\n')
+			return
+		}
+		if _, err := r.outputFile.Write([]byte{'\n'}); err != nil {
+			log.Errorf("usage: write streaming output newline to temp file: %v", err)
+		}
+		return
+	}
+
+	r.outputBuilder.Write(chunk)
+	r.outputBuilder.WriteByte('\n')
 }
 
 func (r *usageReporter) publishFailure(ctx context.Context) {
@@ -102,6 +135,7 @@ func (r *usageReporter) publishWithOutcome(ctx context.Context, detail usage.Det
 		return
 	}
 	r.once.Do(func() {
+		inputContent, outputContent := r.finalizeContent()
 		latencyMs := time.Since(r.requestedAt).Milliseconds()
 		if latencyMs < 0 {
 			latencyMs = 0
@@ -118,8 +152,8 @@ func (r *usageReporter) publishWithOutcome(ctx context.Context, detail usage.Det
 			LatencyMs:     latencyMs,
 			Failed:        failed,
 			Detail:        detail,
-			InputContent:  r.inputContent,
-			OutputContent: r.outputContent,
+			InputContent:  inputContent,
+			OutputContent: outputContent,
 		})
 	})
 }
@@ -133,6 +167,7 @@ func (r *usageReporter) ensurePublished(ctx context.Context) {
 		return
 	}
 	r.once.Do(func() {
+		inputContent, outputContent := r.finalizeContent()
 		latencyMs := time.Since(r.requestedAt).Milliseconds()
 		if latencyMs < 0 {
 			latencyMs = 0
@@ -149,10 +184,65 @@ func (r *usageReporter) ensurePublished(ctx context.Context) {
 			LatencyMs:     latencyMs,
 			Failed:        false,
 			Detail:        usage.Detail{},
-			InputContent:  r.inputContent,
-			OutputContent: r.outputContent,
+			InputContent:  inputContent,
+			OutputContent: outputContent,
 		})
 	})
+}
+
+func (r *usageReporter) spillOutputBuilderToFileLocked() error {
+	if r.outputFile != nil {
+		return nil
+	}
+	file, err := os.CreateTemp("", "cliproxy-usage-output-*")
+	if err != nil {
+		return err
+	}
+	if r.outputBuilder.Len() > 0 {
+		if _, err := file.WriteString(r.outputBuilder.String()); err != nil {
+			_ = file.Close()
+			_ = os.Remove(file.Name())
+			return err
+		}
+		r.outputBuilder.Reset()
+	}
+	r.outputFile = file
+	r.outputPath = file.Name()
+	return nil
+}
+
+func (r *usageReporter) finalizeContent() (string, string) {
+	if r == nil {
+		return "", ""
+	}
+	r.contentMu.Lock()
+	defer r.contentMu.Unlock()
+
+	output := r.outputContent
+	if r.outputBuilder.Len() > 0 {
+		output += r.outputBuilder.String()
+		r.outputBuilder.Reset()
+	}
+	if r.outputFile != nil {
+		path := r.outputPath
+		if err := r.outputFile.Close(); err != nil {
+			log.Errorf("usage: close streaming output temp file: %v", err)
+		}
+		r.outputFile = nil
+		r.outputPath = ""
+		if data, err := os.ReadFile(path); err != nil {
+			log.Errorf("usage: read streaming output temp file: %v", err)
+		} else {
+			output += string(data)
+		}
+		if path != "" {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Warnf("usage: remove streaming output temp file: %v", err)
+			}
+		}
+	}
+	r.outputContent = output
+	return r.inputContent, r.outputContent
 }
 
 func apiKeyFromContext(ctx context.Context) string {

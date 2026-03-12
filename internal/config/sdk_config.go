@@ -17,6 +17,9 @@ type SDKConfig struct {
 	// RequestLog enables or disables detailed request logging functionality.
 	RequestLog bool `yaml:"request-log" json:"request-log"`
 
+	// RequestLogStorage controls how full request/response bodies are retained.
+	RequestLogStorage RequestLogStorageConfig `yaml:"request-log-storage" json:"request-log-storage"`
+
 	// APIKeys is a list of keys for authenticating clients to this proxy server.
 	APIKeys []string `yaml:"api-keys" json:"api-keys"`
 
@@ -34,6 +37,29 @@ type SDKConfig struct {
 	// NonStreamKeepAliveInterval controls how often blank lines are emitted for non-streaming responses.
 	// <= 0 disables keep-alives. Value is in seconds.
 	NonStreamKeepAliveInterval int `yaml:"nonstream-keepalive-interval,omitempty" json:"nonstream-keepalive-interval,omitempty"`
+}
+
+// RequestLogStorageConfig controls retention and cleanup of full request/response bodies.
+type RequestLogStorageConfig struct {
+	// StoreContent toggles persistence of full request and response bodies.
+	// When false, new content is no longer written, but existing stored content is preserved.
+	StoreContent bool `yaml:"store-content" json:"store-content"`
+
+	// ContentRetentionDays defines how many days full request/response bodies are kept.
+	// 0 or less means keep full content indefinitely. Metadata rows remain available
+	// even after content is pruned.
+	ContentRetentionDays int `yaml:"content-retention-days,omitempty" json:"content-retention-days,omitempty"`
+
+	// CleanupIntervalMinutes controls how often the background cleanup job runs.
+	CleanupIntervalMinutes int `yaml:"cleanup-interval-minutes,omitempty" json:"cleanup-interval-minutes,omitempty"`
+
+	// MaxTotalSizeMB caps the total size of stored request/response bodies.
+	// When the cap is exceeded, the oldest stored bodies are pruned before the
+	// normal retention window elapses. 0 disables the size cap.
+	MaxTotalSizeMB int `yaml:"max-total-size-mb,omitempty" json:"max-total-size-mb,omitempty"`
+
+	// VacuumOnCleanup triggers a database VACUUM after content pruning so disk space is reclaimed.
+	VacuumOnCleanup bool `yaml:"vacuum-on-cleanup" json:"vacuum-on-cleanup"`
 }
 
 // StreamingConfig holds server streaming behavior configuration.
