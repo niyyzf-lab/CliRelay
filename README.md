@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://help.router-for.me/">📖 Docs</a> ·
-  <a href="https://github.com/router-for-me/Cli-Proxy-API-Management-Center">🖥️ Management Panel</a> ·
+  <a href="https://github.com/kittors/codeProxy">🖥️ Management Panel</a> ·
   <a href="https://github.com/kittors/CliRelay/issues">🐛 Report Bug</a> ·
   <a href="https://github.com/kittors/CliRelay/pulls">✨ Request Feature</a>
 </p>
@@ -127,7 +127,7 @@ CliRelay can expose a built-in web control panel at `/manage`. The server can ho
 </p>
 <p align="center"><em>Request Logs — Virtual scrolling, multi-filter, token hover, error detail modal</em></p>
 
-> 🔗 The runtime panel source is configurable via `remote-management.panel-github-repository`. The default repository is [router-for-me/Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center).
+> 🔗 The runtime panel source is configurable via `remote-management.panel-github-repository`. The default repository is [kittors/codeProxy](https://github.com/kittors/codeProxy).
 
 ## 🏗️ Supported Providers
 
