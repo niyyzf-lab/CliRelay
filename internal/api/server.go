@@ -6,6 +6,7 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -734,7 +735,7 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		if cleanPath != "." && !strings.Contains(cleanPath, "..") {
 			candidate := filepath.Join(panelDir, cleanPath)
 			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-				c.File(candidate)
+				s.serveStaticFileWithCompression(c, candidate)
 				return
 			}
 		}
@@ -750,6 +751,8 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 			return
 		}
 	}
+	// HTML files should not be cached – always serve fresh.
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.File(htmlFile)
 }
 
@@ -779,6 +782,89 @@ func (s *Server) resolvePanelDir() string {
 		}
 	}
 	return ""
+}
+
+// serveStaticFileWithCompression serves a static file with gzip compression
+// (when the client supports it) and appropriate cache headers.
+// Assets with content-hashed filenames (e.g. index-abc123.js) get immutable
+// caching; all compressible types (JS, CSS, SVG, JSON) are gzip-encoded on the fly.
+func (s *Server) serveStaticFileWithCompression(c *gin.Context, filePath string) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	base := filepath.Base(filePath)
+
+	// Set cache headers: hashed assets get long-lived immutable cache.
+	// A filename is considered hashed if it contains a hyphen followed by
+	// at least 6 alphanumeric characters before the extension, e.g. "index-DH6la3LJ.js".
+	nameWithoutExt := strings.TrimSuffix(base, ext)
+	if idx := strings.LastIndex(nameWithoutExt, "-"); idx > 0 && len(nameWithoutExt)-idx > 6 {
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	}
+
+	// Determine if this file type benefits from compression.
+	compressible := map[string]bool{
+		".js": true, ".css": true, ".svg": true, ".json": true,
+		".html": true, ".xml": true, ".txt": true, ".map": true,
+	}
+
+	if !compressible[ext] {
+		c.File(filePath)
+		return
+	}
+
+	// Check if the client accepts gzip encoding.
+	if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+		c.File(filePath)
+		return
+	}
+
+	// Read the file and compress it.
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		c.File(filePath)
+		return
+	}
+
+	var buf bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		c.File(filePath)
+		return
+	}
+	if _, err = gz.Write(data); err != nil {
+		_ = gz.Close()
+		c.File(filePath)
+		return
+	}
+	if err = gz.Close(); err != nil {
+		c.File(filePath)
+		return
+	}
+
+	// Only use compressed version if it's actually smaller.
+	if buf.Len() >= len(data) {
+		c.File(filePath)
+		return
+	}
+
+	// Determine content type from extension.
+	contentTypes := map[string]string{
+		".js":   "application/javascript; charset=utf-8",
+		".css":  "text/css; charset=utf-8",
+		".svg":  "image/svg+xml",
+		".json": "application/json; charset=utf-8",
+		".html": "text/html; charset=utf-8",
+		".xml":  "application/xml; charset=utf-8",
+		".txt":  "text/plain; charset=utf-8",
+		".map":  "application/json; charset=utf-8",
+	}
+	ct := contentTypes[ext]
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+
+	c.Header("Content-Encoding", "gzip")
+	c.Header("Vary", "Accept-Encoding")
+	c.Data(http.StatusOK, ct, buf.Bytes())
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {
