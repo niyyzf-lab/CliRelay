@@ -17,6 +17,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,6 +52,7 @@ type Handler struct {
 	startTime           time.Time
 	attemptCleanupStop  chan struct{}
 	attemptCleanupOnce  sync.Once
+	accessManager       *sdkaccess.Manager
 }
 
 // NewHandler creates a new management handler instance.
@@ -129,6 +131,10 @@ func (h *Handler) SetConfig(cfg *config.Config) { h.cfg = cfg }
 
 // SetAuthManager updates the auth manager reference used by management endpoints.
 func (h *Handler) SetAuthManager(manager *coreauth.Manager) { h.authManager = manager }
+
+// SetAccessManager wires the request authentication access manager so management writes
+// (such as API key channel/model restrictions) can be applied immediately at runtime.
+func (h *Handler) SetAccessManager(manager *sdkaccess.Manager) { h.accessManager = manager }
 
 // SetUsageStatistics allows replacing the usage statistics reference.
 func (h *Handler) SetUsageStatistics(stats *usage.RequestStatistics) { h.usageStats = stats }

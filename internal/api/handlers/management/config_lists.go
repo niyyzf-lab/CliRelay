@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/access"
 	configaccess "github.com/router-for-me/CLIProxyAPI/v6/internal/access/config_access"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
@@ -15,8 +16,15 @@ import (
 // refreshAPIKeyCache rebuilds the in-memory access provider cache from SQLite.
 // Must be called after every API key write operation.
 func (h *Handler) refreshAPIKeyCache() {
-	if h.cfg != nil {
-		configaccess.Register(&h.cfg.SDKConfig)
+	if h == nil || h.cfg == nil {
+		return
+	}
+	// Always update the global provider registry (used during config reload and service bootstrap).
+	configaccess.Register(&h.cfg.SDKConfig)
+	// Also update the live access manager provider snapshot so changes take effect immediately
+	// without waiting for a full config reload.
+	if h.accessManager != nil {
+		_, _ = access.ApplyAccessProviders(h.accessManager, nil, h.cfg)
 	}
 }
 

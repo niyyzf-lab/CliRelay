@@ -2,6 +2,7 @@ package management
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
@@ -17,6 +18,36 @@ import (
 func (h *Handler) GetModels(c *gin.Context) {
 	modelRegistry := registry.GetGlobalRegistry()
 	allModels := modelRegistry.GetAvailableModels("openai")
+
+	// Optional: filter to models that can be served by the selected channel set.
+	// Used by the management UI when editing API keys.
+	allowedRaw := strings.TrimSpace(c.Query("allowed_channels"))
+	if allowedRaw == "" {
+		allowedRaw = strings.TrimSpace(c.Query("allowed-channels"))
+	}
+	if allowedRaw != "" && allowedRaw != "*" && !strings.EqualFold(allowedRaw, "all") {
+		allowed := make(map[string]struct{})
+		for _, part := range strings.Split(allowedRaw, ",") {
+			key := strings.ToLower(strings.TrimSpace(part))
+			if key == "" {
+				continue
+			}
+			allowed[key] = struct{}{}
+		}
+		if len(allowed) > 0 && h != nil && h.authManager != nil {
+			filtered := make([]map[string]any, 0, len(allModels))
+			for _, model := range allModels {
+				id, _ := model["id"].(string)
+				if id == "" {
+					continue
+				}
+				if h.authManager.CanServeModelWithChannels(id, allowed) {
+					filtered = append(filtered, model)
+				}
+			}
+			allModels = filtered
+		}
+	}
 
 	// Get all pricing data
 	pricingMap := usage.GetAllModelPricing()
