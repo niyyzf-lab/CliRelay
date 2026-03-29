@@ -2,6 +2,7 @@ package management
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,13 +14,52 @@ import (
 // It enriches each log item with resolved api_key_name and channel_name
 // from the in-memory config, eliminating the need for multiple frontend API calls.
 func (h *Handler) GetUsageLogs(c *gin.Context) {
+	// Build name maps from config and auth store first so channel filtering can resolve
+	// to stable auth_index values (and reflect renamed OAuth channels).
+	keyNameMap, channelNameMap, authIndexChannelMap := h.buildNameMaps()
+
+	channelFilterRaw := strings.TrimSpace(c.Query("channel"))
+	if channelFilterRaw == "" {
+		channelFilterRaw = strings.TrimSpace(c.Query("channel_name"))
+	}
+	if channelFilterRaw == "" {
+		channelFilterRaw = strings.TrimSpace(c.Query("channel-name"))
+	}
+	selectedChannelKeys := make(map[string]struct{})
+	if channelFilterRaw != "" {
+		for _, part := range strings.Split(channelFilterRaw, ",") {
+			key := strings.ToLower(strings.TrimSpace(part))
+			if key == "" {
+				continue
+			}
+			selectedChannelKeys[key] = struct{}{}
+		}
+	}
+	var authIndexes []string
+	if len(selectedChannelKeys) > 0 {
+		for idx, name := range authIndexChannelMap {
+			key := strings.ToLower(strings.TrimSpace(name))
+			if key == "" {
+				continue
+			}
+			if _, ok := selectedChannelKeys[key]; ok {
+				authIndexes = append(authIndexes, idx)
+			}
+		}
+		// No matches should yield an empty result set rather than "no filter".
+		if len(authIndexes) == 0 {
+			authIndexes = []string{""}
+		}
+	}
+
 	params := usage.LogQueryParams{
-		Page:   intQueryDefault(c, "page", 1),
-		Size:   intQueryDefault(c, "size", 50),
-		Days:   intQueryDefault(c, "days", 7),
-		APIKey: strings.TrimSpace(c.Query("api_key")),
-		Model:  strings.TrimSpace(c.Query("model")),
-		Status: strings.TrimSpace(c.Query("status")),
+		Page:        intQueryDefault(c, "page", 1),
+		Size:        intQueryDefault(c, "size", 50),
+		Days:        intQueryDefault(c, "days", 7),
+		APIKey:      strings.TrimSpace(c.Query("api_key")),
+		Model:       strings.TrimSpace(c.Query("model")),
+		Status:      strings.TrimSpace(c.Query("status")),
+		AuthIndexes: authIndexes,
 	}
 
 	result, err := usage.QueryLogs(params)
@@ -39,9 +79,6 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Build name maps from config and auth store.
-	keyNameMap, channelNameMap, authIndexChannelMap := h.buildNameMaps()
 
 	// Enrich log items with resolved names
 	for i := range result.Items {
@@ -71,6 +108,25 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		if name, ok := keyNameMap[key]; ok {
 			filters.APIKeyNames[key] = name
 		}
+	}
+	// Add channel filter options from current auth snapshot.
+	if len(authIndexChannelMap) > 0 {
+		seen := make(map[string]struct{})
+		channels := make([]string, 0, len(authIndexChannelMap))
+		for _, name := range authIndexChannelMap {
+			trimmed := strings.TrimSpace(name)
+			key := strings.ToLower(trimmed)
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			channels = append(channels, trimmed)
+		}
+		sort.Slice(channels, func(i, j int) bool { return strings.ToLower(channels[i]) < strings.ToLower(channels[j]) })
+		filters.Channels = channels
 	}
 
 	c.JSON(http.StatusOK, gin.H{

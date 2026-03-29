@@ -36,12 +36,13 @@ type LogRow struct {
 
 // LogQueryParams holds filter/pagination parameters for QueryLogs.
 type LogQueryParams struct {
-	Page   int    // 1-based
-	Size   int    // rows per page
-	Days   int    // time range in days
-	APIKey string // exact match filter
-	Model  string // exact match filter
-	Status string // "success", "failed", or "" (all)
+	Page        int      // 1-based
+	Size        int      // rows per page
+	Days        int      // time range in days
+	APIKey      string   // exact match filter
+	Model       string   // exact match filter
+	Status      string   // "success", "failed", or "" (all)
+	AuthIndexes []string // optional auth_index IN (...) filter
 }
 
 // LogQueryResult holds the paginated query result.
@@ -57,6 +58,7 @@ type FilterOptions struct {
 	APIKeys     []string          `json:"api_keys"`
 	APIKeyNames map[string]string `json:"api_key_names"`
 	Models      []string          `json:"models"`
+	Channels    []string          `json:"channels"`
 }
 
 // LogStats holds aggregated stats over the filtered result set.
@@ -107,6 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_logs_api_key ON request_logs(api_key);
 CREATE INDEX IF NOT EXISTS idx_logs_model ON request_logs(model);
 CREATE INDEX IF NOT EXISTS idx_logs_failed ON request_logs(failed);
+CREATE INDEX IF NOT EXISTS idx_logs_auth_index ON request_logs(auth_index);
 CREATE INDEX IF NOT EXISTS idx_log_content_timestamp ON request_log_content(timestamp DESC);
 `
 
@@ -595,6 +598,23 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 		conditions = append(conditions, "failed = 0")
 	} else if params.Status == "failed" {
 		conditions = append(conditions, "failed = 1")
+	}
+	if len(params.AuthIndexes) > 0 {
+		placeholders := make([]string, 0, len(params.AuthIndexes))
+		for _, idx := range params.AuthIndexes {
+			trimmed := strings.TrimSpace(idx)
+			if trimmed == "" {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, trimmed)
+		}
+		if len(placeholders) > 0 {
+			conditions = append(conditions, "auth_index IN ("+strings.Join(placeholders, ",")+")")
+		} else {
+			// If caller attempted to filter but provided no usable auth indexes, match nothing.
+			conditions = append(conditions, "1 = 0")
+		}
 	}
 
 	if len(conditions) == 0 {
