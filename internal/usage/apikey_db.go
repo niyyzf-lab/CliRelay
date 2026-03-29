@@ -25,6 +25,7 @@ type APIKeyRow struct {
 	RPMLimit         int      `json:"rpm-limit,omitempty"`
 	TPMLimit         int      `json:"tpm-limit,omitempty"`
 	AllowedModels    []string `json:"allowed-models,omitempty"`
+	AllowedChannels  []string `json:"allowed-channels,omitempty"`
 	SystemPrompt     string   `json:"system-prompt,omitempty"`
 	CreatedAt        string   `json:"created-at,omitempty"`
 	UpdatedAt        string   `json:"updated-at,omitempty"`
@@ -43,6 +44,7 @@ func (r *APIKeyRow) ToConfigEntry() config.APIKeyEntry {
 		RPMLimit:         r.RPMLimit,
 		TPMLimit:         r.TPMLimit,
 		AllowedModels:    r.AllowedModels,
+		AllowedChannels:  r.AllowedChannels,
 		SystemPrompt:     r.SystemPrompt,
 		CreatedAt:        r.CreatedAt,
 	}
@@ -61,6 +63,7 @@ func APIKeyRowFromConfig(entry config.APIKeyEntry) APIKeyRow {
 		RPMLimit:         entry.RPMLimit,
 		TPMLimit:         entry.TPMLimit,
 		AllowedModels:    entry.AllowedModels,
+		AllowedChannels:  entry.AllowedChannels,
 		SystemPrompt:     entry.SystemPrompt,
 		CreatedAt:        entry.CreatedAt,
 	}
@@ -78,6 +81,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   rpm_limit         INTEGER NOT NULL DEFAULT 0,
   tpm_limit         INTEGER NOT NULL DEFAULT 0,
   allowed_models    TEXT NOT NULL DEFAULT '[]',
+  allowed_channels  TEXT NOT NULL DEFAULT '[]',
   system_prompt     TEXT NOT NULL DEFAULT '',
   created_at        TEXT NOT NULL DEFAULT '',
   updated_at        TEXT NOT NULL DEFAULT ''
@@ -87,6 +91,22 @@ CREATE TABLE IF NOT EXISTS api_keys (
 func initAPIKeysTable(db *sql.DB) {
 	if _, err := db.Exec(createAPIKeysTableSQL); err != nil {
 		log.Errorf("usage: create api_keys table: %v", err)
+	}
+	migrateAPIKeyColumns(db)
+}
+
+func migrateAPIKeyColumns(db *sql.DB) {
+	for _, col := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "allowed_channels", definition: "TEXT NOT NULL DEFAULT '[]'"},
+	} {
+		if _, err := db.Exec("ALTER TABLE api_keys ADD COLUMN " + col.name + " " + col.definition); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+				log.Warnf("usage: migrate api_keys column %s: %v", col.name, err)
+			}
+		}
 	}
 }
 
@@ -168,8 +188,8 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 
 	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO api_keys
 		(key, name, disabled, daily_limit, total_quota, spending_limit,
-		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, system_prompt, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		log.Errorf("usage: prepare api_keys migration: %v", err)
@@ -183,6 +203,10 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 		if row.AllowedModels == nil {
 			modelsJSON = []byte("[]")
 		}
+		channelsJSON, _ := json.Marshal(row.AllowedChannels)
+		if row.AllowedChannels == nil {
+			channelsJSON = []byte("[]")
+		}
 		disabledInt := 0
 		if row.Disabled {
 			disabledInt = 1
@@ -191,7 +215,7 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 			row.Key, row.Name, disabledInt,
 			row.DailyLimit, row.TotalQuota, row.SpendingLimit,
 			row.ConcurrencyLimit, row.RPMLimit, row.TPMLimit,
-			string(modelsJSON), row.SystemPrompt,
+			string(modelsJSON), string(channelsJSON), row.SystemPrompt,
 			row.CreatedAt, row.UpdatedAt,
 		); err != nil {
 			_ = tx.Rollback()
@@ -238,7 +262,7 @@ func ListAPIKeys() []APIKeyRow {
 
 	rows, err := db.Query(`SELECT key, name, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
-		allowed_models, system_prompt, created_at, updated_at
+		allowed_models, allowed_channels, system_prompt, created_at, updated_at
 		FROM api_keys ORDER BY created_at ASC`)
 	if err != nil {
 		log.Errorf("usage: list api_keys: %v", err)
@@ -258,7 +282,7 @@ func GetAPIKey(key string) *APIKeyRow {
 
 	row := db.QueryRow(`SELECT key, name, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
-		allowed_models, system_prompt, created_at, updated_at
+		allowed_models, allowed_channels, system_prompt, created_at, updated_at
 		FROM api_keys WHERE key = ?`, key)
 
 	return scanSingleAPIKeyRow(row)
@@ -280,6 +304,10 @@ func UpsertAPIKey(entry APIKeyRow) error {
 	if entry.AllowedModels == nil {
 		modelsJSON = []byte("[]")
 	}
+	channelsJSON, _ := json.Marshal(entry.AllowedChannels)
+	if entry.AllowedChannels == nil {
+		channelsJSON = []byte("[]")
+	}
 	disabledInt := 0
 	if entry.Disabled {
 		disabledInt = 1
@@ -291,19 +319,20 @@ func UpsertAPIKey(entry APIKeyRow) error {
 
 	_, err := db.Exec(`INSERT INTO api_keys
 		(key, name, disabled, daily_limit, total_quota, spending_limit,
-		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, system_prompt, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET
 			name=excluded.name, disabled=excluded.disabled,
 			daily_limit=excluded.daily_limit, total_quota=excluded.total_quota,
 			spending_limit=excluded.spending_limit, concurrency_limit=excluded.concurrency_limit,
 			rpm_limit=excluded.rpm_limit, tpm_limit=excluded.tpm_limit,
-			allowed_models=excluded.allowed_models, system_prompt=excluded.system_prompt,
+			allowed_models=excluded.allowed_models, allowed_channels=excluded.allowed_channels,
+			system_prompt=excluded.system_prompt,
 			updated_at=excluded.updated_at`,
 		trimmed, strings.TrimSpace(entry.Name), disabledInt,
 		entry.DailyLimit, entry.TotalQuota, entry.SpendingLimit,
 		entry.ConcurrencyLimit, entry.RPMLimit, entry.TPMLimit,
-		string(modelsJSON), entry.SystemPrompt,
+		string(modelsJSON), string(channelsJSON), entry.SystemPrompt,
 		entry.CreatedAt, now,
 	)
 	return err
@@ -338,8 +367,8 @@ func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 
 	stmt, err := tx.Prepare(`INSERT INTO api_keys
 		(key, name, disabled, daily_limit, total_quota, spending_limit,
-		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, system_prompt, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -356,6 +385,10 @@ func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 		if entry.AllowedModels == nil {
 			modelsJSON = []byte("[]")
 		}
+		channelsJSON, _ := json.Marshal(entry.AllowedChannels)
+		if entry.AllowedChannels == nil {
+			channelsJSON = []byte("[]")
+		}
 		disabledInt := 0
 		if entry.Disabled {
 			disabledInt = 1
@@ -367,7 +400,7 @@ func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 			trimmed, strings.TrimSpace(entry.Name), disabledInt,
 			entry.DailyLimit, entry.TotalQuota, entry.SpendingLimit,
 			entry.ConcurrencyLimit, entry.RPMLimit, entry.TPMLimit,
-			string(modelsJSON), entry.SystemPrompt,
+			string(modelsJSON), string(channelsJSON), entry.SystemPrompt,
 			entry.CreatedAt, now,
 		); err != nil {
 			_ = tx.Rollback()
@@ -399,11 +432,12 @@ func scanAPIKeyFromRow(row scannable) *APIKeyRow {
 	var r APIKeyRow
 	var disabledInt int
 	var modelsJSON string
+	var channelsJSON string
 	if err := row.Scan(
 		&r.Key, &r.Name, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
-		&modelsJSON, &r.SystemPrompt,
+		&modelsJSON, &channelsJSON, &r.SystemPrompt,
 		&r.CreatedAt, &r.UpdatedAt,
 	); err != nil {
 		return nil
@@ -411,6 +445,9 @@ func scanAPIKeyFromRow(row scannable) *APIKeyRow {
 	r.Disabled = disabledInt != 0
 	if modelsJSON != "" && modelsJSON != "[]" {
 		_ = json.Unmarshal([]byte(modelsJSON), &r.AllowedModels)
+	}
+	if channelsJSON != "" && channelsJSON != "[]" {
+		_ = json.Unmarshal([]byte(channelsJSON), &r.AllowedChannels)
 	}
 	return &r
 }
@@ -419,11 +456,12 @@ func scanSingleAPIKeyRow(row *sql.Row) *APIKeyRow {
 	var r APIKeyRow
 	var disabledInt int
 	var modelsJSON string
+	var channelsJSON string
 	if err := row.Scan(
 		&r.Key, &r.Name, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
-		&modelsJSON, &r.SystemPrompt,
+		&modelsJSON, &channelsJSON, &r.SystemPrompt,
 		&r.CreatedAt, &r.UpdatedAt,
 	); err != nil {
 		return nil
@@ -431,6 +469,9 @@ func scanSingleAPIKeyRow(row *sql.Row) *APIKeyRow {
 	r.Disabled = disabledInt != 0
 	if modelsJSON != "" && modelsJSON != "[]" {
 		_ = json.Unmarshal([]byte(modelsJSON), &r.AllowedModels)
+	}
+	if channelsJSON != "" && channelsJSON != "[]" {
+		_ = json.Unmarshal([]byte(channelsJSON), &r.AllowedChannels)
 	}
 	return &r
 }

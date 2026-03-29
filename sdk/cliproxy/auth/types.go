@@ -394,6 +394,29 @@ func (a *Auth) AccountInfo() (string, string) {
 	return "", ""
 }
 
+// ChannelName returns the user-facing channel label used by management UI and routing restrictions.
+func (a *Auth) ChannelName() string {
+	if a == nil {
+		return ""
+	}
+	if label := strings.TrimSpace(a.Label); label != "" {
+		return label
+	}
+	if a.Metadata != nil {
+		if raw, ok := a.Metadata["label"].(string); ok {
+			if label := strings.TrimSpace(raw); label != "" {
+				return label
+			}
+		}
+		if raw, ok := a.Metadata["email"].(string); ok {
+			if email := strings.TrimSpace(raw); email != "" {
+				return email
+			}
+		}
+	}
+	return strings.TrimSpace(a.Provider)
+}
+
 // ExpirationTime attempts to extract the credential expiration timestamp from metadata.
 // It inspects common keys such as "expired", "expire", "expires_at", and also
 // nested "token" objects to remain compatible with legacy auth file formats.

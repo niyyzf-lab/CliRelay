@@ -378,7 +378,7 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 		"name":           name,
 		"type":           strings.TrimSpace(auth.Provider),
 		"provider":       strings.TrimSpace(auth.Provider),
-		"label":          auth.Label,
+		"label":          auth.ChannelName(),
 		"status":         auth.Status,
 		"status_message": auth.StatusMessage,
 		"disabled":       auth.Disabled,
@@ -709,10 +709,7 @@ func (h *Handler) registerAuthFromFile(ctx context.Context, path string, data []
 	if provider == "" {
 		provider = "unknown"
 	}
-	label := provider
-	if email, ok := metadata["email"].(string); ok && email != "" {
-		label = email
-	}
+	label := authChannelLabelFromMetadata(metadata, provider)
 	lastRefresh, hasLastRefresh := extractLastRefreshTimestamp(metadata)
 
 	authID := h.authIDForPath(path)
@@ -817,7 +814,7 @@ func (h *Handler) PatchAuthFileStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "disabled": *req.Disabled})
 }
 
-// PatchAuthFileFields updates editable fields (prefix, proxy_url, priority) of an auth file.
+// PatchAuthFileFields updates editable fields (label, prefix, proxy_url, priority) of an auth file.
 func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 	if h.authManager == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "core auth manager unavailable"})
@@ -826,6 +823,7 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 
 	var req struct {
 		Name     string  `json:"name"`
+		Label    *string `json:"label"`
 		Prefix   *string `json:"prefix"`
 		ProxyURL *string `json:"proxy_url"`
 		Priority *int    `json:"priority"`
@@ -863,6 +861,28 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 	}
 
 	changed := false
+	if req.Label != nil {
+		accountType, _ := targetAuth.AccountInfo()
+		if !strings.EqualFold(accountType, "oauth") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "label is only supported for oauth auth files"})
+			return
+		}
+		if isRuntimeOnlyAuth(targetAuth) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "runtime-only auth files cannot rename channel"})
+			return
+		}
+		label, errValidate := h.validateAuthChannelName(*req.Label, targetAuth.ID)
+		if errValidate != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+			return
+		}
+		targetAuth.Label = label
+		if targetAuth.Metadata == nil {
+			targetAuth.Metadata = make(map[string]any)
+		}
+		targetAuth.Metadata["label"] = label
+		changed = true
+	}
 	if req.Prefix != nil {
 		targetAuth.Prefix = *req.Prefix
 		changed = true

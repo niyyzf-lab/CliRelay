@@ -956,6 +956,7 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 	return func(c *gin.Context) {
 		// Check if this API key has allowed-models restriction
 		var allowedModels map[string]struct{}
+		var allowedChannels map[string]struct{}
 		if metadataVal, exists := c.Get("accessMetadata"); exists {
 			if metadata, ok := metadataVal.(map[string]string); ok {
 				if allowedStr, exists := metadata["allowed-models"]; exists && allowedStr != "" {
@@ -970,11 +971,23 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 						allowedModels = nil
 					}
 				}
+				if allowedStr, exists := metadata["allowed-channels"]; exists && allowedStr != "" {
+					allowedChannels = make(map[string]struct{})
+					for _, channel := range strings.Split(allowedStr, ",") {
+						trimmed := strings.ToLower(strings.TrimSpace(channel))
+						if trimmed != "" {
+							allowedChannels[trimmed] = struct{}{}
+						}
+					}
+					if len(allowedChannels) == 0 {
+						allowedChannels = nil
+					}
+				}
 			}
 		}
 
 		// If no restriction, just call the handler directly
-		if allowedModels == nil {
+		if allowedModels == nil && allowedChannels == nil {
 			userAgent := c.GetHeader("User-Agent")
 			if strings.HasPrefix(userAgent, "claude-cli") {
 				claudeHandler.ClaudeModels(c)
@@ -1014,9 +1027,17 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 		filtered := make([]map[string]interface{}, 0, len(resp.Data))
 		for _, model := range resp.Data {
 			if id, ok := model["id"].(string); ok {
-				if _, allowed := allowedModels[id]; allowed {
-					filtered = append(filtered, model)
+				if allowedModels != nil {
+					if _, allowed := allowedModels[id]; !allowed {
+						continue
+					}
 				}
+				if allowedChannels != nil {
+					if s.handlers == nil || s.handlers.AuthManager == nil || !s.handlers.AuthManager.CanServeModelWithChannels(id, allowedChannels) {
+						continue
+					}
+				}
+				filtered = append(filtered, model)
 			}
 		}
 		resp.Data = filtered

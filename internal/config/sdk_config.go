@@ -108,6 +108,9 @@ type APIKeyEntry struct {
 	// AllowedModels lists model patterns this key can access. Empty means all models.
 	AllowedModels []string `yaml:"allowed-models,omitempty" json:"allowed-models,omitempty"`
 
+	// AllowedChannels lists channel names this key can access. Empty means all channels.
+	AllowedChannels []string `yaml:"allowed-channels,omitempty" json:"allowed-channels,omitempty"`
+
 	// SystemPrompt is a system-level prompt that will be prepended to all requests
 	// made with this API key. When set, a system message with this content is
 	// automatically injected as the first message in the conversation.

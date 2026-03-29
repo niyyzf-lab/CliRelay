@@ -190,6 +190,30 @@ func TestAPIKeyAllowedModels(t *testing.T) {
 	}
 }
 
+func TestAPIKeyAllowedChannels(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	entry := APIKeyRow{
+		Key:             "sk-channels",
+		AllowedChannels: []string{"Claude Team", "Gemini Pool"},
+	}
+	if err := UpsertAPIKey(entry); err != nil {
+		t.Fatalf("UpsertAPIKey: %v", err)
+	}
+
+	got := GetAPIKey("sk-channels")
+	if got == nil {
+		t.Fatal("expected to find key")
+	}
+	if len(got.AllowedChannels) != 2 {
+		t.Fatalf("allowed_channels len = %d, want 2", len(got.AllowedChannels))
+	}
+	if got.AllowedChannels[0] != "Claude Team" || got.AllowedChannels[1] != "Gemini Pool" {
+		t.Errorf("allowed_channels = %v, want [Claude Team Gemini Pool]", got.AllowedChannels)
+	}
+}
+
 func TestAPIKeySystemPromptSpecialChars(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()
@@ -226,6 +250,9 @@ func TestAPIKeyToConfigEntry(t *testing.T) {
 		Name:          "Converted",
 		DailyLimit:    50,
 		AllowedModels: []string{"model-a"},
+		AllowedChannels: []string{
+			"Claude Team",
+		},
 		SystemPrompt:  "hello",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
@@ -239,5 +266,8 @@ func TestAPIKeyToConfigEntry(t *testing.T) {
 	}
 	if len(entry.AllowedModels) != 1 || entry.AllowedModels[0] != "model-a" {
 		t.Errorf("AllowedModels mismatch: %v", entry.AllowedModels)
+	}
+	if len(entry.AllowedChannels) != 1 || entry.AllowedChannels[0] != "Claude Team" {
+		t.Errorf("AllowedChannels mismatch: %v", entry.AllowedChannels)
 	}
 }

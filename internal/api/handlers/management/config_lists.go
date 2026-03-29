@@ -222,6 +222,13 @@ func (h *Handler) PutAPIKeyEntries(c *gin.Context) {
 	}
 	var rows []usage.APIKeyRow
 	for _, entry := range arr {
+		entry.AllowedChannels = uniqueChannels(entry.AllowedChannels)
+		validated, errValidate := h.validateAllowedChannels(entry.AllowedChannels)
+		if errValidate != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+			return
+		}
+		entry.AllowedChannels = validated
 		rows = append(rows, usage.APIKeyRowFromConfig(entry))
 	}
 	if err := usage.ReplaceAllAPIKeys(rows); err != nil {
@@ -243,6 +250,7 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 		RPMLimit         *int      `json:"rpm-limit"`
 		TPMLimit         *int      `json:"tpm-limit"`
 		AllowedModels    *[]string `json:"allowed-models"`
+		AllowedChannels  *[]string `json:"allowed-channels"`
 		SystemPrompt     *string   `json:"system-prompt"`
 		CreatedAt        *string   `json:"created-at"`
 	}
@@ -325,6 +333,14 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	if body.Value.AllowedModels != nil {
 		entry.AllowedModels = append([]string(nil), (*body.Value.AllowedModels)...)
 	}
+	if body.Value.AllowedChannels != nil {
+		validated, errValidate := h.validateAllowedChannels(*body.Value.AllowedChannels)
+		if errValidate != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+			return
+		}
+		entry.AllowedChannels = validated
+	}
 	if body.Value.SystemPrompt != nil {
 		entry.SystemPrompt = strings.TrimSpace(*body.Value.SystemPrompt)
 	}
@@ -394,8 +410,14 @@ func (h *Handler) PutGeminiKeys(c *gin.Context) {
 		}
 		arr = obj.Items
 	}
+	prev := append([]config.GeminiKey(nil), h.cfg.GeminiKey...)
 	h.cfg.GeminiKey = append([]config.GeminiKey(nil), arr...)
 	h.cfg.SanitizeGeminiKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.GeminiKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 func (h *Handler) PatchGeminiKey(c *gin.Context) {
@@ -462,8 +484,14 @@ func (h *Handler) PatchGeminiKey(c *gin.Context) {
 	if body.Value.ExcludedModels != nil {
 		entry.ExcludedModels = config.NormalizeExcludedModels(*body.Value.ExcludedModels)
 	}
+	prev := append([]config.GeminiKey(nil), h.cfg.GeminiKey...)
 	h.cfg.GeminiKey[targetIndex] = entry
 	h.cfg.SanitizeGeminiKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.GeminiKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 
@@ -520,8 +548,14 @@ func (h *Handler) PutClaudeKeys(c *gin.Context) {
 	for i := range arr {
 		normalizeClaudeKey(&arr[i])
 	}
+	prev := append([]config.ClaudeKey(nil), h.cfg.ClaudeKey...)
 	h.cfg.ClaudeKey = arr
 	h.cfg.SanitizeClaudeKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.ClaudeKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 func (h *Handler) PatchClaudeKey(c *gin.Context) {
@@ -588,8 +622,14 @@ func (h *Handler) PatchClaudeKey(c *gin.Context) {
 		entry.ExcludedModels = config.NormalizeExcludedModels(*body.Value.ExcludedModels)
 	}
 	normalizeClaudeKey(&entry)
+	prev := append([]config.ClaudeKey(nil), h.cfg.ClaudeKey...)
 	h.cfg.ClaudeKey[targetIndex] = entry
 	h.cfg.SanitizeClaudeKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.ClaudeKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 
@@ -647,8 +687,14 @@ func (h *Handler) PutOpenAICompat(c *gin.Context) {
 			filtered = append(filtered, arr[i])
 		}
 	}
+	prev := append([]config.OpenAICompatibility(nil), h.cfg.OpenAICompatibility...)
 	h.cfg.OpenAICompatibility = filtered
 	h.cfg.SanitizeOpenAICompatibility()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.OpenAICompatibility = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 func (h *Handler) PatchOpenAICompat(c *gin.Context) {
@@ -714,8 +760,14 @@ func (h *Handler) PatchOpenAICompat(c *gin.Context) {
 		entry.Headers = config.NormalizeHeaders(*body.Value.Headers)
 	}
 	normalizeOpenAICompatibilityEntry(&entry)
+	prev := append([]config.OpenAICompatibility(nil), h.cfg.OpenAICompatibility...)
 	h.cfg.OpenAICompatibility[targetIndex] = entry
 	h.cfg.SanitizeOpenAICompatibility()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.OpenAICompatibility = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 
@@ -1089,8 +1141,14 @@ func (h *Handler) PutCodexKeys(c *gin.Context) {
 		}
 		filtered = append(filtered, entry)
 	}
+	prev := append([]config.CodexKey(nil), h.cfg.CodexKey...)
 	h.cfg.CodexKey = filtered
 	h.cfg.SanitizeCodexKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.CodexKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 func (h *Handler) PatchCodexKey(c *gin.Context) {
@@ -1160,8 +1218,14 @@ func (h *Handler) PatchCodexKey(c *gin.Context) {
 		entry.ExcludedModels = config.NormalizeExcludedModels(*body.Value.ExcludedModels)
 	}
 	normalizeCodexKey(&entry)
+	prev := append([]config.CodexKey(nil), h.cfg.CodexKey...)
 	h.cfg.CodexKey[targetIndex] = entry
 	h.cfg.SanitizeCodexKeys()
+	if err := h.validateChannelNames(); err != nil {
+		h.cfg.CodexKey = prev
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	h.persist(c)
 }
 

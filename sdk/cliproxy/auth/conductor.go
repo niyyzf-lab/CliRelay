@@ -856,6 +856,42 @@ func hasRequestedModelMetadata(meta map[string]any) bool {
 	}
 }
 
+func allowedChannelsFromMetadata(meta map[string]any) map[string]struct{} {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw, ok := meta["allowed-channels"]
+	if !ok || raw == nil {
+		return nil
+	}
+	var values []string
+	switch typed := raw.(type) {
+	case string:
+		values = strings.Split(typed, ",")
+	case []string:
+		values = typed
+	case []any:
+		values = make([]string, 0, len(typed))
+		for _, item := range typed {
+			values = append(values, fmt.Sprint(item))
+		}
+	default:
+		return nil
+	}
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed == "" {
+			continue
+		}
+		out[trimmed] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func pinnedAuthIDFromMetadata(meta map[string]any) string {
 	if len(meta) == 0 {
 		return ""
@@ -1629,6 +1665,51 @@ func (m *Manager) List() []*Auth {
 	return list
 }
 
+func authAllowedByChannels(auth *Auth, allowed map[string]struct{}) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if auth == nil {
+		return false
+	}
+	channel := strings.ToLower(strings.TrimSpace(auth.ChannelName()))
+	if channel == "" {
+		return false
+	}
+	_, ok := allowed[channel]
+	return ok
+}
+
+// CanServeModelWithChannels reports whether at least one active auth in the allowed channel set supports modelID.
+func (m *Manager) CanServeModelWithChannels(modelID string, allowed map[string]struct{}) bool {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return false
+	}
+	if len(allowed) == 0 {
+		return true
+	}
+	registryRef := registry.GetGlobalRegistry()
+	if registryRef == nil {
+		return false
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, candidate := range m.auths {
+		if candidate == nil || candidate.Disabled {
+			continue
+		}
+		if !authAllowedByChannels(candidate, allowed) {
+			continue
+		}
+		if registryRef.ClientSupportsModel(candidate.ID, modelID) {
+			return true
+		}
+	}
+	return false
+}
+
 // GetByID retrieves an auth entry by its ID.
 
 func (m *Manager) GetByID(id string) (*Auth, bool) {
@@ -1693,6 +1774,7 @@ func (m *Manager) CloseExecutionSession(sessionID string) {
 
 func (m *Manager) pickNext(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, tried map[string]struct{}) (*Auth, ProviderExecutor, error) {
 	pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata)
+	allowedChannels := allowedChannelsFromMetadata(opts.Metadata)
 
 	m.mu.RLock()
 	executor, okExecutor := m.executors[provider]
@@ -1715,6 +1797,9 @@ func (m *Manager) pickNext(ctx context.Context, provider, model string, opts cli
 			continue
 		}
 		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
+			continue
+		}
+		if !authAllowedByChannels(candidate, allowedChannels) {
 			continue
 		}
 		if _, used := tried[candidate.ID]; used {
@@ -1753,6 +1838,7 @@ func (m *Manager) pickNext(ctx context.Context, provider, model string, opts cli
 
 func (m *Manager) pickNextMixed(ctx context.Context, providers []string, model string, opts cliproxyexecutor.Options, tried map[string]struct{}) (*Auth, ProviderExecutor, string, error) {
 	pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata)
+	allowedChannels := allowedChannelsFromMetadata(opts.Metadata)
 
 	providerSet := make(map[string]struct{}, len(providers))
 	for _, provider := range providers {
@@ -1782,6 +1868,9 @@ func (m *Manager) pickNextMixed(ctx context.Context, providers []string, model s
 			continue
 		}
 		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
+			continue
+		}
+		if !authAllowedByChannels(candidate, allowedChannels) {
 			continue
 		}
 		providerKey := strings.TrimSpace(strings.ToLower(candidate.Provider))

@@ -48,6 +48,7 @@ func buildKeyConfigMap(cfg *sdkconfig.SDKConfig) map[string]keyConfig {
 		}
 		result[trimmed] = keyConfig{
 			allowedModels:    row.AllowedModels,
+			allowedChannels:  row.AllowedChannels,
 			dailyLimit:       row.DailyLimit,
 			totalQuota:       row.TotalQuota,
 			spendingLimit:    row.SpendingLimit,
@@ -69,6 +70,7 @@ func buildKeyConfigMap(cfg *sdkconfig.SDKConfig) map[string]keyConfig {
 		}
 		result[trimmed] = keyConfig{
 			allowedModels:    entry.AllowedModels,
+			allowedChannels:  entry.AllowedChannels,
 			dailyLimit:       entry.DailyLimit,
 			totalQuota:       entry.TotalQuota,
 			spendingLimit:    entry.SpendingLimit,
@@ -94,6 +96,7 @@ func buildKeyConfigMap(cfg *sdkconfig.SDKConfig) map[string]keyConfig {
 // keyConfig holds the per-key configuration extracted from APIKeyEntry.
 type keyConfig struct {
 	allowedModels    []string
+	allowedChannels  []string
 	dailyLimit       int
 	totalQuota       int
 	spendingLimit    float64
@@ -166,6 +169,9 @@ func (p *provider) Authenticate(_ context.Context, r *http.Request) (*sdkaccess.
 			}
 			if len(kc.allowedModels) > 0 {
 				metadata["allowed-models"] = strings.Join(kc.allowedModels, ",")
+			}
+			if len(kc.allowedChannels) > 0 {
+				metadata["allowed-channels"] = strings.Join(kc.allowedChannels, ",")
 			}
 			if kc.dailyLimit > 0 {
 				metadata["daily-limit"] = fmt.Sprintf("%d", kc.dailyLimit)
