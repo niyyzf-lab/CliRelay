@@ -226,6 +226,32 @@ func intQueryDefault(c *gin.Context, key string, def int) int {
 	return n
 }
 
+func normalizeLogContentFormat(c *gin.Context) string {
+	format := strings.ToLower(strings.TrimSpace(c.Query("format")))
+	if format == "" {
+		return "json"
+	}
+	switch format {
+	case "json", "text":
+		return format
+	default:
+		return "json"
+	}
+}
+
+func normalizeLogContentPartQuery(c *gin.Context) string {
+	part := strings.ToLower(strings.TrimSpace(c.Query("part")))
+	if part == "" {
+		return "both"
+	}
+	switch part {
+	case "both", "input", "output":
+		return part
+	default:
+		return "both"
+	}
+}
+
 // GetLogContent returns the stored request/response content for a single log entry.
 func (h *Handler) GetLogContent(c *gin.Context) {
 	idStr := c.Param("id")
@@ -235,13 +261,46 @@ func (h *Handler) GetLogContent(c *gin.Context) {
 		return
 	}
 
-	result, err := usage.QueryLogContent(id)
+	part := normalizeLogContentPartQuery(c)
+	format := normalizeLogContentFormat(c)
+
+	if format == "text" && part == "both" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format=text requires part=input or part=output"})
+		return
+	}
+
+	if part == "both" {
+		result, err := usage.QueryLogContent(id)
+		if err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	result, err := usage.QueryLogContentPart(id, part)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if format == "text" {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("X-Log-Id", strconv.FormatInt(result.ID, 10))
+		c.Header("X-Log-Part", result.Part)
+		if strings.TrimSpace(result.Model) != "" {
+			c.Header("X-Model", result.Model)
+		}
+		c.String(http.StatusOK, result.Content)
 		return
 	}
 
@@ -363,13 +422,46 @@ func (h *Handler) GetPublicLogContent(c *gin.Context) {
 		return
 	}
 
-	result, err := usage.QueryLogContentForKey(id, apiKey)
+	part := normalizeLogContentPartQuery(c)
+	format := normalizeLogContentFormat(c)
+
+	if format == "text" && part == "both" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format=text requires part=input or part=output"})
+		return
+	}
+
+	if part == "both" {
+		result, err := usage.QueryLogContentForKey(id, apiKey)
+		if err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	result, err := usage.QueryLogContentPartForKey(id, apiKey, part)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if format == "text" {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("X-Log-Id", strconv.FormatInt(result.ID, 10))
+		c.Header("X-Log-Part", result.Part)
+		if strings.TrimSpace(result.Model) != "" {
+			c.Header("X-Model", result.Model)
+		}
+		c.String(http.StatusOK, result.Content)
 		return
 	}
 
